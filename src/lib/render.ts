@@ -218,17 +218,23 @@ function layoutState(layout: CameraLayout, bubble: CamState, W: number, H: numbe
   return { rect: { x: pad, y: H * (1 - SIDE_SHARE), w: W - 2 * pad, h: H * SIDE_SHARE - pad }, radius, alpha: 1, src: FULL_FRAME };
 }
 
-/** Draw the normalized `src` area of an image so it covers rect `r`, centered, optionally mirrored. */
-function drawCover(ctx: Ctx2D, img: CanvasImageSource, iw: number, ih: number, src: Rect, r: Rect, mirror: boolean) {
+/** Normalized part of an `iw` x `ih` image to show so its `src` area covers a rect of size `r`, centered (CSS object-fit: cover). */
+export function coverUV(src: Rect, r: { w: number; h: number }, iw: number, ih: number): Rect {
   const aw = src.w * iw, ah = src.h * ih;
   const s = Math.max(r.w / aw, r.h / ah);
   const sw = r.w / s, sh = r.h / s;
+  return { x: (src.x * iw + (aw - sw) / 2) / iw, y: (src.y * ih + (ah - sh) / 2) / ih, w: sw / iw, h: sh / ih };
+}
+
+/** Draw the normalized `src` area of an image so it covers rect `r`, centered, optionally mirrored. */
+function drawCover(ctx: Ctx2D, img: CanvasImageSource, iw: number, ih: number, src: Rect, r: Rect, mirror: boolean) {
+  const uv = coverUV(src, r, iw, ih);
   ctx.save();
   if (mirror) {
     ctx.translate(r.x * 2 + r.w, 0);
     ctx.scale(-1, 1);
   }
-  ctx.drawImage(img, src.x * iw + (aw - sw) / 2, src.y * ih + (ah - sh) / 2, sw, sh, r.x, r.y, r.w, r.h);
+  ctx.drawImage(img, uv.x * iw, uv.y * ih, uv.w * iw, uv.h * ih, r.x, r.y, r.w, r.h);
   ctx.restore();
 }
 

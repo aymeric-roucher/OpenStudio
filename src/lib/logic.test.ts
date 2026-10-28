@@ -9,7 +9,7 @@ import { groupWords } from "./transcribe";
 import { timeStretch } from "./timestretch";
 import type { CameraCorner, CameraSettings, Project, Segment, ZoomRegion } from "./types";
 import { DEFAULT_STYLE, normalizeStyle } from "./defaults";
-import { cameraCropRect, cameraState } from "./render";
+import { cameraCropRect, cameraState, coverUV } from "./render";
 
 const segs: Segment[] = [
   { id: "a", start: 0, end: 4, speed: 1, volume: 1 },
@@ -163,6 +163,17 @@ describe("camera", () => {
     expect(gx).toBeCloseTo(gap);
     expect(gy).toBeCloseTo(gap);
     expect(r.w).toBeCloseTo(r.h);
+  });
+
+  it.each([
+    ["square bubble from a 16:9 crop keeps the middle", { x: 0, y: 0, w: 1, h: 1 }, { w: 100, h: 100 }, 1600, 900, { x: 0.21875, y: 0, w: 0.5625, h: 1 }],
+    ["wide bubble from a square crop keeps the middle band", { x: 0.25, y: 0, w: 0.5, h: 1 }, { w: 160, h: 90 }, 1600, 800, { x: 0.25, y: 0.21875, w: 0.5, h: 0.5625 }],
+  ] as const)("cover fit: %s", (_name, src, rect, iw, ih, expected) => {
+    const r = coverUV(src, rect, iw, ih);
+    expect(r.x).toBeCloseTo(expected.x);
+    expect(r.y).toBeCloseTo(expected.y);
+    expect(r.w).toBeCloseTo(expected.w);
+    expect(r.h).toBeCloseTo(expected.h);
   });
 
   it.each([
