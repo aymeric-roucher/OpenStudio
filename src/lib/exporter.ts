@@ -42,7 +42,7 @@ const SAMPLE_RATE = 48000;
 const MUSIC_FADE = 1;
 /** Motion blur: shutter open for this fraction of a frame at full strength, at most this many sub-frames. */
 const SHUTTER = 0.5;
-const MAX_SUBFRAMES = 8;
+const MAX_SUBFRAMES = 4;
 /** Blur length in output pixels covered by each sub-frame. */
 const PX_PER_SUBFRAME = 3;
 
@@ -134,12 +134,13 @@ function motionPx(project: Project, W: number, H: number, src: FrameSources, t0:
 }
 
 /** Number of motion blur sub-frames for a frame whose content moves `px` pixels during one frame. 1 means no blur. */
-function subframeCount(px: number, motionBlur: number): number {
+export function subframeCount(px: number, motionBlur: number): number {
   return Math.min(MAX_SUBFRAMES, Math.max(1, Math.ceil((px * SHUTTER * motionBlur) / PX_PER_SUBFRAME)));
 }
 
+/** Extra motion blur copies are drawn at half size: about four times cheaper, and they are blurred by motion anyway. */
 function subframeCanvas(width: number, height: number) {
-  const canvas = new OffscreenCanvas(width, height);
+  const canvas = new OffscreenCanvas(Math.round(width / 2), Math.round(height / 2));
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Cannot create a 2D canvas context");
   return { canvas, ctx };
@@ -245,9 +246,9 @@ export async function exportVideo(
             renderFrame(ctx, width, height, project, src, tj);
             continue;
           }
-          renderFrame(blur.ctx, width, height, project, src, tj);
+          renderFrame(blur.ctx, blur.canvas.width, blur.canvas.height, project, src, tj);
           ctx.globalAlpha = 1 / (j + 1);
-          ctx.drawImage(blur.canvas, 0, 0);
+          ctx.drawImage(blur.canvas, 0, 0, width, height);
           ctx.globalAlpha = 1;
         }
       }

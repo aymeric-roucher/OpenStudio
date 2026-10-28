@@ -4,7 +4,7 @@ import { zoomViewport } from "./zoom";
 import { cursorAt, inferClicks, suggestClickZooms } from "./cursor";
 import { toSubtitles } from "./subtitles";
 import { fitFrame, outputSize } from "./layout";
-import { exportPlan, gifDelay } from "./exporter";
+import { exportPlan, gifDelay, subframeCount } from "./exporter";
 import { groupWords } from "./transcribe";
 import { timeStretch } from "./timestretch";
 import type { CameraCorner, CameraSettings, Project, Segment, ZoomRegion } from "./types";
@@ -227,6 +227,15 @@ describe("export", () => {
     ["custom gif is scaled down to the gif cap", "custom", { format: "gif", long: 1920, fps: 30, quality: "low" }, { width: 768, height: 960, fps: 15, frames: 90 }],
   ] as const)("plan: %s", (_name, aspect, settings, expected) => {
     expect(exportPlan(rec, { ...base, aspect }, settings)).toEqual(expected);
+  });
+
+  it.each([
+    ["static frame draws once", 0, 1, 1],
+    ["slow motion gets two copies", 10, 1, 2],
+    ["fast zoom is capped", 400, 1, 4],
+    ["blur turned down needs fewer copies", 40, 0.25, 2],
+  ] as const)("motion blur copies: %s", (_name, px, strength, expected) => {
+    expect(subframeCount(px, strength)).toBe(expected);
   });
 
   it.each([15, 24, 30])("gif delays at %i fps add up to the exact duration", (fps) => {
