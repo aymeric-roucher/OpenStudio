@@ -4,6 +4,8 @@ import { audioPeaks } from "../lib/media";
 import { freeSlot, moveRegion, outputSpanToSource, segmentOffsets, sourceRangeToOutput, trimEdge } from "../lib/timeline";
 import { onTimeline } from "../lib/render";
 import type { Project, Segment } from "../lib/types";
+import type { Player } from "../lib/player";
+import { usePlayerTime } from "./usePlayerTime";
 import type { EditorApi } from "./Editor";
 import { Dropdown, formatTime, Slider } from "./ui";
 
@@ -132,6 +134,22 @@ function RegionTrack<T extends Span>(props: {
   );
 }
 
+/** Time readout, re-rendered every frame on its own. */
+function LiveTime({ player }: { player: Player }) {
+  return <span className="time">{formatTime(usePlayerTime(player, 0).time)}</span>;
+}
+
+/** Playhead, re-rendered every frame on its own, keeping itself in view while playing. `pinned` is the hover-scrub anchor. */
+function Playhead(props: { player: Player; pps: number; scrollRef: React.RefObject<HTMLDivElement | null>; pinned: () => number | null }) {
+  const { time, playing } = usePlayerTime(props.player, 0);
+  const x = PAD + (props.pinned() ?? time) * props.pps;
+  useEffect(() => {
+    const el = props.scrollRef.current!;
+    if (playing && (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - 40)) el.scrollLeft = x - 60;
+  }, [x, playing, props.scrollRef]);
+  return <div className="playhead" style={{ left: x }} />;
+}
+
 export default function Timeline(props: {
   api: EditorApi;
   playing: boolean;
@@ -141,7 +159,7 @@ export default function Timeline(props: {
   onAdd: (kind: RegionKind, at: number) => void;
 }) {
   const { api, duration } = props;
-  const { p, rec, player, time } = api;
+  const { p, rec, player } = api;
   const [zoom, setZoom] = useState(1);
   const [width, setWidth] = useState(1000);
   const [scrubber, setScrubber] = useState(true);
@@ -221,16 +239,10 @@ export default function Timeline(props: {
     el.addEventListener("pointerup", up);
   };
 
-  // Keep the playhead visible while playing.
-  useEffect(() => {
-    const el = scrollRef.current!;
-    const x = PAD + time * pps;
-    if (props.playing && (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - 40)) el.scrollLeft = x - 60;
-  }, [time, pps, props.playing]);
 
   const bounds = [0, ...offsets.slice(1), duration];
-  const prevCut = () => commitSeek([...bounds].reverse().find((b) => b < time - 0.05) ?? 0);
-  const nextCut = () => commitSeek(bounds.find((b) => b > time + 0.05) ?? duration);
+  const prevCut = () => commitSeek([...bounds].reverse().find((b) => b < player.time - 0.05) ?? 0);
+  const nextCut = () => commitSeek(bounds.find((b) => b > player.time + 0.05) ?? duration);
 
   const selSeg = api.sel?.kind === "segment" ? p.segments.find((s) => s.id === api.sel!.id) : undefined;
   const setSpeed = (speed: number) => api.update((x) => ({ ...x, segments: x.segments.map((s) => (s.id === selSeg!.id ? { ...s, speed } : s)) }));
@@ -251,12 +263,12 @@ export default function Timeline(props: {
       <div className="transport">
         <div className="left">
           <button className="icon-btn" title="Split clip at playhead (C)" onClick={props.onSplit}><Scissors size={17} /></button>
-          <button className="icon-btn" title="Add zoom at playhead (Z)" onClick={() => props.onAdd("zoom", time)}><ZoomIn size={17} /></button>
-          <button className="icon-btn" title="Add blur or highlight mask (M)" onClick={() => props.onAdd("mask", time)}><EyeOff size={17} /></button>
-          {rec.camera && <button className="icon-btn" title="Add camera layout change (L)" onClick={() => props.onAdd("layout", time)}><SquareUser size={17} /></button>}
+          <button className="icon-btn" title="Add zoom at playhead (Z)" onClick={() => props.onAdd("zoom", player.time)}><ZoomIn size={17} /></button>
+          <button className="icon-btn" title="Add blur or highlight mask (M)" onClick={() => props.onAdd("mask", player.time)}><EyeOff size={17} /></button>
+          {rec.camera && <button className="icon-btn" title="Add camera layout change (L)" onClick={() => props.onAdd("layout", player.time)}><SquareUser size={17} /></button>}
         </div>
         <div className="center">
-          <span className="time">{formatTime(time)}</span>
+          <LiveTime player={player} />
           <button className="icon-btn" title="Previous cut" onClick={prevCut}><SkipBack size={17} /></button>
           <button className="icon-btn" title="Play or pause (Space)" onClick={props.onTogglePlay} style={{ width: 38, height: 38, color: "var(--text)" }}>
             {props.playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
@@ -407,7 +419,7 @@ export default function Timeline(props: {
               )}
             </div>
           )}
-          <div className="playhead" style={{ left: PAD + (saved.current ?? time) * pps }} />
+          <Playhead player={player} pps={pps} scrollRef={scrollRef} pinned={() => saved.current} />
           {hoverT !== null && <div className="hover-line" style={{ left: PAD + hoverT * pps }} />}
         </div>
       </div>

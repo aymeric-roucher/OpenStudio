@@ -13,6 +13,7 @@ import { freeSlot, outputDuration, outputSpanToSource, splitAt } from "../lib/ti
 import type { MaskRegion, PresetAspect, Project, Recording, Rect, Style } from "../lib/types";
 import { CustomSize, Dropdown } from "./ui";
 import Timeline from "./Timeline";
+import { usePlayerTime } from "./usePlayerTime";
 import Inspector, { type Tab } from "./Inspector";
 import { CameraCropModal, CommandMenu, CropModal, ExportDialog, type Action } from "./Dialogs";
 
@@ -55,8 +56,8 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; onN
   const h = useHistory(() => defaultProject(rec, props.initialStyle));
   const p = h.state;
   const [player] = useState(() => new Player(rec, p));
-  const [time, setTime] = useState(0);
-  const [playing, setPlaying] = useState(false);
+  // The preview canvas reads the player directly every frame; the rest of the editor only needs a few updates per second.
+  const { time, playing } = usePlayerTime(player, 250);
   const [sel, setSel] = useState<Selection>(null);
   const [tab, setTab] = useState<Tab>("background");
   const [modal, setModal] = useState<"crop" | "camera-crop" | "export" | "command" | null>(null);
@@ -136,8 +137,6 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; onN
           drawn.current = { version: player.version, project: p, bg: bgImage, w: cw, h: ch };
         }
       }
-      setTime(player.time);
-      setPlaying(player.playing);
       raf = requestAnimationFrame(loop);
     };
     loop();

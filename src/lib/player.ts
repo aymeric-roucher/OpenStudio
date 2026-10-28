@@ -21,6 +21,17 @@ export class Player {
   playing = false;
   /** Bumped whenever a new frame may be visible, so the preview knows to redraw. */
   version = 0;
+  private listeners = new Set<() => void>();
+
+  /** Be told whenever the time or the play state changes. Returns the unsubscribe function. */
+  subscribe(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private notify() {
+    this.listeners.forEach((fn) => fn());
+  }
 
   constructor(rec: Recording, project: Project) {
     this.project = project;
@@ -86,6 +97,7 @@ export class Player {
     this.screen.currentTime = source;
     this.setRate();
     this.playing = true;
+    this.notify();
     await Promise.all([this.screen.play(), this.camera?.play(), this.audioCtx.resume()]);
     this.syncMusic();
   }
@@ -96,6 +108,7 @@ export class Player {
     this.camera?.pause();
     this.music?.pause();
     this.version++;
+    this.notify();
   }
 
   seek(t: number) {
@@ -107,6 +120,7 @@ export class Player {
     this.setRate();
     if (this.playing) this.syncMusic();
     this.version++;
+    this.notify();
   }
 
   private setRate() {
@@ -147,6 +161,7 @@ export class Player {
       this.music.volume = Math.max(0, Math.min(1, m.volume * fade));
     }
     this.version++;
+    this.notify();
   }
 
   destroy() {
