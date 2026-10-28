@@ -18,13 +18,15 @@ export const DEFAULT_STYLE: Style = {
   inset: 1,
   camera: { visible: true, x: 0.12, y: 0.8, size: 0.28, shape: "rounded", mirror: true, shadow: 0.6, border: 0, shrinkOnZoom: true },
   captionStyle: { enabled: true, size: 0.045, y: 0.88 },
+  zoomSpeed: "mellow",
+  motionBlur: 0.5,
 };
 
 export function defaultProject(rec: Recording, style: Style): Project {
   return {
     ...structuredClone(style),
     name: `Recording ${new Date().toLocaleString()}`,
-    segments: [{ id: uid(), start: 0, end: rec.duration, speed: 1 }],
+    segments: [{ id: uid(), start: 0, end: rec.duration, speed: 1, volume: 1 }],
     zooms: [],
     masks: [],
     cameraLayouts: [],
@@ -37,6 +39,6 @@ export function defaultProject(rec: Recording, style: Style): Project {
 }
 
 export function styleOf(p: Project): Style {
-  const { aspect, background, padding, radius, shadow, inset, camera, captionStyle } = p;
-  return structuredClone({ aspect, background, padding, radius, shadow, inset, camera, captionStyle });
+  const { aspect, background, padding, radius, shadow, inset, camera, captionStyle, zoomSpeed, motionBlur } = p;
+  return structuredClone({ aspect, background, padding, radius, shadow, inset, camera, captionStyle, zoomSpeed, motionBlur });
 }

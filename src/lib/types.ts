@@ -1,7 +1,10 @@
-/** A kept piece of the source recording, in source seconds, played at `speed`. */
-export type Segment = { id: string; start: number; end: number; speed: number };
+/** A kept piece of the source recording, in source seconds, played at `speed` with a volume multiplier. */
+export type Segment = { id: string; start: number; end: number; speed: number; volume: number };
 
-/** A zoom on the composition, in output seconds. Focus point is normalized to the output canvas. */
+/**
+ * A zoom on the composition. Like every timeline effect, times are in source seconds so effects stay
+ * attached to their content when clips are cut or sped up. Focus point is normalized to the output canvas.
+ */
 export type ZoomRegion = {
   id: string;
   start: number;
@@ -15,12 +18,12 @@ export type ZoomRegion = {
 
 export type MaskKind = "blur" | "pixelate" | "highlight";
 
-/** A masked area of the screen recording, in output seconds. `rect` is normalized to the (cropped) screen frame. */
+/** A masked area of the screen recording, in source seconds. `rect` is normalized to the (cropped) screen frame. */
 export type MaskRegion = { id: string; start: number; end: number; kind: MaskKind; rect: Rect; strength: number };
 
 export type CameraLayout = "hidden" | "fullscreen" | "side";
 
-/** Overrides the default camera bubble during a time range, in output seconds. */
+/** Overrides the default camera bubble during a time range, in source seconds. */
 export type CameraLayoutRegion = { id: string; start: number; end: number; layout: CameraLayout };
 
 /** A transcribed caption chunk, in source seconds (so cuts and speed changes keep it aligned). */
@@ -81,7 +84,13 @@ export type Style = {
   inset: number;
   camera: CameraSettings;
   captionStyle: CaptionStyle;
+  /** How fast zooms animate in and out. */
+  zoomSpeed: ZoomSpeed;
+  /** Motion blur strength applied on export while the view moves, 0 = off. */
+  motionBlur: number;
 };
+
+export type ZoomSpeed = "slow" | "mellow" | "quick" | "rapid";
 
 export type Project = Style & {
   name: string;

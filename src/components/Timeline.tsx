@@ -1,7 +1,8 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { AudioWaveform, EyeOff, SquareUser, Flag, Pause, Play, Plus, Scissors, SkipBack, SkipForward, ZoomIn } from "lucide-react";
 import { audioPeaks } from "../lib/media";
-import { freeSlot, moveRegion, segmentOffsets, sourceRangeToOutput, trimEdge } from "../lib/timeline";
+import { freeSlot, moveRegion, outputSpanToSource, segmentOffsets, sourceRangeToOutput, trimEdge } from "../lib/timeline";
+import { onTimeline } from "../lib/render";
 import type { Segment } from "../lib/types";
 import type { EditorApi } from "./Editor";
 import { Dropdown, formatTime, Slider } from "./ui";
@@ -64,7 +65,8 @@ function RegionTrack<T extends Span>(props: {
   emptyLabel: string;
   addLabel: string;
   label: (r: T) => React.ReactNode;
-  set: (regions: T[], coalesce: string) => void;
+  /** Store a region's new output span (converted back to source seconds by the caller). */
+  setSpan: (id: string, start: number, end: number, coalesce: string) => void;
   onAdd: (kind: RegionKind, at: number) => void;
 }) {
   const { api, kind, regions, pps, duration } = props;
@@ -95,7 +97,10 @@ function RegionTrack<T extends Span>(props: {
           dragSeconds(
             e,
             pps,
-            (dt) => props.set(moveRegion(regions, r.id, r.start + dt, r.end + dt, duration, mode), `${kind}-${mode}-${r.id}`),
+            (dt) => {
+              const moved = moveRegion(regions, r.id, r.start + dt, r.end + dt, duration, mode).find((x) => x.id === r.id)!;
+              props.setSpan(r.id, moved.start, moved.end, `${kind}-${mode}-${r.id}`);
+            },
             (moved) => !moved && mode === "move" && api.player.seek(r.start + (e.clientX - (e.target as HTMLElement).getBoundingClientRect().left) / pps),
           );
         };
@@ -201,6 +206,12 @@ export default function Timeline(props: {
   const selSeg = api.sel?.kind === "segment" ? p.segments.find((s) => s.id === api.sel!.id) : undefined;
   const setSpeed = (speed: number) => api.update((x) => ({ ...x, segments: x.segments.map((s) => (s.id === selSeg!.id ? { ...s, speed } : s)) }));
 
+  const tl = onTimeline(p);
+  const setSpan = (key: "zooms" | "masks" | "cameraLayouts") => (id: string, start: number, end: number, coalesce: string) => {
+    const [a, b] = outputSpanToSource(p.segments, start, end);
+    api.update((x) => ({ ...x, [key]: x[key].map((r) => (r.id === id ? { ...r, start: a, end: b } : r)) }), coalesce);
+  };
+
   const flags = rec.flags.map((f) => sourceRangeToOutput(p.segments, f, f + 0.01)).filter((r): r is [number, number] => r !== null);
   const captions = p.captions
     .map((c) => ({ c, r: sourceRangeToOutput(p.segments, c.start, c.end) }))
@@ -286,25 +297,25 @@ export default function Timeline(props: {
           </div>
 
           <RegionTrack
-            api={api} kind="zoom" regions={p.zooms} pps={pps} duration={duration} className="zoom-block"
+            api={api} kind="zoom" regions={tl.zooms} pps={pps} duration={duration} className="zoom-block"
             emptyLabel="Click to add a zoom" addLabel="Zoom"
             label={(z) => (<><small>Zoom</small>{z.scale.toFixed(1)}x · {z.instant ? "Instant" : "Smooth"}</>)}
-            set={(zooms, k) => api.update((x) => ({ ...x, zooms }), k)}
+            setSpan={setSpan("zooms")}
             onAdd={props.onAdd}
           />
           <RegionTrack
-            api={api} kind="mask" regions={p.masks} pps={pps} duration={duration} className="mask-block"
+            api={api} kind="mask" regions={tl.masks} pps={pps} duration={duration} className="mask-block"
             emptyLabel="Click to add a blur or highlight" addLabel="Mask"
             label={(m) => (<><small>Mask</small>{m.kind}</>)}
-            set={(masks, k) => api.update((x) => ({ ...x, masks }), k)}
+            setSpan={setSpan("masks")}
             onAdd={props.onAdd}
           />
           {rec.camera && (
             <RegionTrack
-              api={api} kind="layout" regions={p.cameraLayouts} pps={pps} duration={duration} className="layout-block"
+              api={api} kind="layout" regions={tl.cameraLayouts} pps={pps} duration={duration} className="layout-block"
               emptyLabel="Click to change the camera layout for a section" addLabel="Camera layout"
               label={(l) => (<><small>Camera</small>{l.layout}</>)}
-              set={(cameraLayouts, k) => api.update((x) => ({ ...x, cameraLayouts }), k)}
+              setSpan={setSpan("cameraLayouts")}
               onAdd={props.onAdd}
             />
           )}

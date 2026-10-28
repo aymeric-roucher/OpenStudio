@@ -10,6 +10,7 @@ type Result = { screen: Blob; camera: Blob | null; flags: number[] };
 export default function RecordingSession(props: { req: StartRequest; onDone: (r: Result) => void; onCancel: () => void }) {
   const { req } = props;
   const [count, setCount] = useState(req.countdown);
+  const [take, setTake] = useState(0);
   const [, setTick] = useState(0);
   const [flags, setFlags] = useState(0);
   const recRef = useRef<SessionRecorder | null>(null);
@@ -25,7 +26,7 @@ export default function RecordingSession(props: { req: StartRequest; onDone: (r:
       recRef.current = new SessionRecorder(req.cap);
       recRef.current.start();
     }
-  }, [count, req.cap]);
+  }, [count, take, req.cap]);
 
   // Refresh the timer display.
   useEffect(() => {
@@ -57,7 +58,8 @@ export default function RecordingSession(props: { req: StartRequest; onDone: (r:
     recRef.current?.discard();
     recRef.current = null;
     setFlags(0);
-    setCount(req.countdown || 3);
+    setCount(req.countdown);
+    setTake((t) => t + 1);
   };
 
   const togglePause = () => {

@@ -46,7 +46,6 @@ export class Player {
   setProject(p: Project) {
     const segmentsChanged = p.segments !== this.project.segments;
     this.project = p;
-    this.applyVolume();
     if (p.music?.url !== this.musicUrl) {
       this.music?.pause();
       this.musicUrl = p.music?.url ?? null;
@@ -62,11 +61,12 @@ export class Player {
         this.setRate();
       }
     }
+    this.applyVolume();
     this.version++;
   }
 
   private applyVolume() {
-    const v = this.project.muted ? 0 : this.project.volume;
+    const v = this.project.muted ? 0 : this.project.volume * this.project.segments[this.seg].volume;
     if (this.gain) this.gain.gain.value = v;
     else this.screen.volume = Math.min(v, 1);
   }
@@ -110,6 +110,7 @@ export class Player {
   }
 
   private setRate() {
+    this.applyVolume();
     const speed = this.project.segments[this.seg].speed;
     this.screen.playbackRate = speed;
     if (this.camera) this.camera.playbackRate = speed;

@@ -1,8 +1,8 @@
 import { fitFrame } from "./layout";
-import { outputToSource } from "./timeline";
+import { outputToSource, regionsToOutput } from "./timeline";
 import type { CameraLayout, Project, Rect } from "./types";
 import { drawWallpaper, WALLPAPERS } from "./wallpapers";
-import { zoomViewport } from "./zoom";
+import { ZOOM_TRANSITION, zoomViewport } from "./zoom";
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -34,6 +34,29 @@ const lerpRect = (a: Rect, b: Rect, p: number): Rect => ({
 function roundRect(ctx: Ctx2D, r: Rect, radius: number) {
   ctx.beginPath();
   ctx.roundRect(r.x, r.y, r.w, r.h, Math.max(0, Math.min(radius, r.w / 2, r.h / 2)));
+}
+
+// ---------- timeline ----------
+
+const timelineCache = new WeakMap<Project, Project>();
+
+/** The project with its zooms, masks and camera layouts converted from source to output seconds. */
+export function onTimeline(p: Project): Project {
+  const hit = timelineCache.get(p);
+  if (hit) return hit;
+  const q = {
+    ...p,
+    zooms: regionsToOutput(p.segments, p.zooms),
+    masks: regionsToOutput(p.segments, p.masks),
+    cameraLayouts: regionsToOutput(p.segments, p.cameraLayouts),
+  };
+  timelineCache.set(p, q);
+  return q;
+}
+
+/** Zoom view at output time t. */
+export function viewAt(p: Project, t: number): Rect {
+  return zoomViewport(onTimeline(p).zooms, t, ZOOM_TRANSITION[p.zoomSpeed]);
 }
 
 // ---------- shadows ----------
@@ -243,7 +266,8 @@ function drawCaption(ctx: Ctx2D, p: Project, W: number, H: number, sourceTime: n
 // ---------- frame geometry ----------
 
 /** Where the screen frame sits at output time t, before zoom. Exported for UI hit-testing. */
-export function frameRect(p: Project, W: number, H: number, screenW: number, screenH: number, t: number): Rect {
+export function frameRect(project: Project, W: number, H: number, screenW: number, screenH: number, t: number): Rect {
+  const p = onTimeline(project);
   const contentAspect = (p.crop.w * screenW) / (p.crop.h * screenH);
   const { layout, progress } = layoutAt(p, t);
   const side = layout === "side" ? progress : 0;
@@ -253,8 +277,9 @@ export function frameRect(p: Project, W: number, H: number, screenW: number, scr
 }
 
 /** Camera rectangle, corner radius and opacity at output time t. */
-export function cameraState(p: Project, W: number, H: number, camAspect: number, t: number): CamState {
-  const bubble = bubbleState(p, W, H, zoomViewport(p.zooms, t).w, camAspect);
+export function cameraState(project: Project, W: number, H: number, camAspect: number, t: number): CamState {
+  const p = onTimeline(project);
+  const bubble = bubbleState(p, W, H, viewAt(project, t).w, camAspect);
   const { layout, progress } = layoutAt(p, t);
   const target = layout ? layoutState(layout, bubble, W, H, p.padding * Math.min(W, H)) : bubble;
   return {
@@ -265,9 +290,10 @@ export function cameraState(p: Project, W: number, H: number, camAspect: number,
 }
 
 /** Draw one fully composited output frame at output time t. */
-export function renderFrame(ctx: Ctx2D, W: number, H: number, p: Project, src: FrameSources, t: number): void {
+export function renderFrame(ctx: Ctx2D, W: number, H: number, project: Project, src: FrameSources, t: number): void {
+  const p = onTimeline(project);
   const m = Math.min(W, H);
-  const view = zoomViewport(p.zooms, t);
+  const view = viewAt(project, t);
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -277,7 +303,7 @@ export function renderFrame(ctx: Ctx2D, W: number, H: number, p: Project, src: F
   ctx.translate(-view.x * W, -view.y * H);
   ctx.drawImage(backgroundCanvas(p, W, H, src.bgImage), 0, 0);
 
-  const frame = frameRect(p, W, H, src.screenW, src.screenH, t);
+  const frame = frameRect(project, W, H, src.screenW, src.screenH, t);
   const radius = p.radius * Math.min(frame.w, frame.h);
   if (p.shadow > 0) drawShadow(ctx, frame, radius, p.shadow * m * 0.06, p.shadow * m * 0.015, 0.25 + 0.45 * p.shadow);
   ctx.save();
@@ -303,7 +329,7 @@ export function renderFrame(ctx: Ctx2D, W: number, H: number, p: Project, src: F
   ctx.restore();
 
   if (src.camera) {
-    const s = cameraState(p, W, H, src.cameraW / src.cameraH, t);
+    const s = cameraState(project, W, H, src.cameraW / src.cameraH, t);
     if (s.alpha > 0.01) {
       ctx.save();
       ctx.globalAlpha = s.alpha;

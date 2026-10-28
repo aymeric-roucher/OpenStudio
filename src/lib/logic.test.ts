@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { freeSlot, moveRegion, sourceRangeToOutput, speedUpRanges, outputDuration, outputToSource, sourceToOutput, splitAt, trimEdge } from "./timeline";
+import { freeSlot, moveRegion, outputSpanToSource, regionsToOutput, sourceRangeToOutput, speedUpRanges, outputDuration, outputToSource, sourceToOutput, splitAt, trimEdge } from "./timeline";
 import { zoomViewport } from "./zoom";
 import { fitFrame, outputSize } from "./layout";
 import { exportPlan, gifDelay } from "./exporter";
@@ -7,8 +7,8 @@ import { groupWords } from "./transcribe";
 import type { Segment, ZoomRegion } from "./types";
 
 const segs: Segment[] = [
-  { id: "a", start: 0, end: 4, speed: 1 },
-  { id: "b", start: 6, end: 10, speed: 2 },
+  { id: "a", start: 0, end: 4, speed: 1, volume: 1 },
+  { id: "b", start: 6, end: 10, speed: 2, volume: 1 },
 ];
 
 describe("timeline", () => {
@@ -64,6 +64,7 @@ describe("timeline", () => {
     ["free space", 7, [7, 9]],
     ["shortened by next region", 4, [4, 5]],
     ["no room inside a region", 2, null],
+    ["at the end, placed before the playhead", 10, [8, 10]],
   ] as const)("free slot: %s", (_name, t, expected) => {
     expect(freeSlot(regions, t, 2, 10)).toEqual(expected);
   });
@@ -85,6 +86,19 @@ describe("timeline", () => {
   ] as const)("source range to output: %s", (_name, s, e, expected) => {
     expect(sourceRangeToOutput(segs, s, e)).toEqual(expected);
   });
+
+  it("maps source-time regions onto the output, dropping the ones that were cut", () => {
+    const regions = [{ id: "x", start: 1, end: 3 }, { id: "y", start: 5, end: 8 }, { id: "z", start: 4.5, end: 5.5 }];
+    expect(regionsToOutput(segs, regions).map((r) => [r.id, r.start, r.end])).toEqual([["x", 1, 3], ["y", 4, 5]]);
+  });
+
+  it.each([
+    ["inside one segment", 1, 3, [1, 3]],
+    ["ends on a cut", 3, 4, [3, 4]],
+    ["crosses a cut", 3, 5, [3, 8]],
+  ] as const)("output span to source: %s", (_name, a, b, expected) => {
+    expect(outputSpanToSource(segs, a, b)).toEqual(expected);
+  });
 });
 
 describe("zoom", () => {
@@ -94,7 +108,7 @@ describe("zoom", () => {
     ["fully zoomed: focus clamped inside frame", 4, { x: 0.5, y: 0.25, w: 0.5, h: 0.5 }],
     ["after region: full view", 7, { x: 0, y: 0, w: 1, h: 1 }],
   ])("%s", (_name, t, expected) => {
-    const v = zoomViewport(zooms, t);
+    const v = zoomViewport(zooms, t, 0.6);
     expect(v.x).toBeCloseTo(expected.x);
     expect(v.y).toBeCloseTo(expected.y);
     expect(v.w).toBeCloseTo(expected.w);

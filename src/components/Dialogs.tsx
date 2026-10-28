@@ -148,7 +148,14 @@ export function ExportDialog(props: { api: EditorApi; bgImage: CanvasImageSource
     abort.current = new AbortController();
     setProgress(0);
     const t0 = performance.now();
-    const blob = await exportVideo(api.rec, api.p, props.bgImage, s, setProgress, abort.current.signal).finally(() => setProgress(null));
+    const blob = await exportVideo(api.rec, api.p, props.bgImage, s, setProgress, abort.current.signal)
+      .catch((e: unknown) => {
+        // Cancelling is not an error.
+        if (e instanceof DOMException && e.name === "AbortError") return null;
+        throw e;
+      })
+      .finally(() => setProgress(null));
+    if (!blob) return;
     setResult({ blob, url: URL.createObjectURL(blob), seconds: (performance.now() - t0) / 1000 });
   };
 

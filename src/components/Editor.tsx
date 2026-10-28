@@ -8,9 +8,8 @@ import { ASPECTS, outputSize } from "../lib/layout";
 import { download } from "../lib/media";
 import { Player } from "../lib/player";
 import { loadPrefs, savePrefs } from "../lib/prefs";
-import { cameraState, frameRect, renderFrame, type FrameSources } from "../lib/render";
-import { freeSlot, outputDuration, splitAt } from "../lib/timeline";
-import { zoomViewport } from "../lib/zoom";
+import { cameraState, frameRect, onTimeline, renderFrame, viewAt, type FrameSources } from "../lib/render";
+import { freeSlot, outputDuration, outputSpanToSource, splitAt } from "../lib/timeline";
 import type { Aspect, MaskRegion, Project, Recording, Rect, Style } from "../lib/types";
 import { Dropdown } from "./ui";
 import Timeline from "./Timeline";
@@ -173,11 +172,12 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
   };
 
   const addRegion = (kind: "zoom" | "mask" | "layout", at = player.time) => {
-    const list = kind === "zoom" ? p.zooms : kind === "mask" ? p.masks : p.cameraLayouts;
+    const tl = onTimeline(p);
+    const list = kind === "zoom" ? tl.zooms : kind === "mask" ? tl.masks : tl.cameraLayouts;
     const slot = freeSlot(list, at, kind === "zoom" ? 2.5 : 3, duration);
     if (!slot) return setNotice("No room here: move the playhead to an empty spot on that track");
     const id = uid();
-    const [start, end] = slot;
+    const [start, end] = outputSpanToSource(p.segments, slot[0], slot[1]);
     h.update((x) => {
       if (kind === "zoom") return { ...x, zooms: [...x.zooms, { id, start, end, scale: 2, x: 0.5, y: 0.5, instant: false }] };
       if (kind === "mask") {
@@ -279,7 +279,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
 
   // ---------- preview interactions ----------
 
-  const view = zoomViewport(p.zooms, time);
+  const view = viewAt(p, time);
   const toDisplay = (x: number, y: number) => ({ x: ((x - view.x) / view.w) * display.w, y: ((y - view.y) / view.h) * display.h });
   const selZoom = sel?.kind === "zoom" ? p.zooms.find((z) => z.id === sel.id) : undefined;
   const selMask = sel?.kind === "mask" ? p.masks.find((m) => m.id === sel.id) : undefined;

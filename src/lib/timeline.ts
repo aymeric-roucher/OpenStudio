@@ -92,12 +92,34 @@ export function moveRegion<T extends Span>(regions: T[], id: string, start: numb
   return regions.map((x) => (x.id === id ? { ...x, start: s, end: e } : x));
 }
 
-/** Room for a new region of up to `length` seconds starting at t, or null if there is not enough. */
+/** Room for a new region of up to `length` seconds at t: after t if possible, else ending at t. Null if there is not enough. */
 export function freeSlot(regions: Span[], t: number, length: number, total: number): [number, number] | null {
-  if (regions.some((x) => t >= x.start && t < x.end)) return null;
+  if (regions.some((x) => t > x.start && t < x.end)) return null;
   const next = Math.min(total, ...regions.filter((x) => x.start >= t).map((x) => x.start));
   const end = Math.min(t + length, next);
-  return end - t >= 0.5 ? [t, end] : null;
+  if (end - t >= 0.5) return [t, end];
+  const prev = Math.max(0, ...regions.filter((x) => x.end <= t).map((x) => x.end));
+  const start = Math.max(t - length, prev);
+  return t - start >= 0.5 ? [start, t] : null;
+}
+
+/** Regions stored in source seconds, placed on the output timeline. Fully cut regions are dropped. */
+export function regionsToOutput<T extends Span>(segments: Segment[], regions: T[]): T[] {
+  return regions.flatMap((r) => {
+    const o = sourceRangeToOutput(segments, r.start, r.end);
+    return o ? [{ ...r, start: o[0], end: o[1] }] : [];
+  });
+}
+
+/** Source span for an output span. An end landing on a cut maps to the end of the segment before it. */
+export function outputSpanToSource(segments: Segment[], start: number, end: number): [number, number] {
+  const a = outputToSource(segments, start).source;
+  const offsets = segmentOffsets(segments);
+  const i = offsets.findIndex((o, k) => end <= o + (segments[k].end - segments[k].start) / segments[k].speed + 1e-9);
+  const k = i === -1 ? segments.length - 1 : i;
+  const s = segments[k];
+  const b = s.start + Math.min(Math.max(end - offsets[k], 0), (s.end - s.start) / s.speed) * s.speed;
+  return [a, b];
 }
 
 /** Play the given source ranges at `speed`, splitting segments at range boundaries. */
@@ -111,7 +133,7 @@ export function speedUpRanges(segments: Segment[], ranges: readonly { start: num
     const bounds = [s.start, ...cuts, s.end];
     return bounds.slice(0, -1).map((start, i) => {
       const end = bounds[i + 1];
-      return { id: i === 0 ? s.id : newId(), start, end, speed: inside((start + end) / 2) ? speed : s.speed };
+      return { ...s, id: i === 0 ? s.id : newId(), start, end, speed: inside((start + end) / 2) ? speed : s.speed };
     });
   });
 }
