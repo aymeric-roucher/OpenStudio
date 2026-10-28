@@ -1,16 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Flag, Pause, Play, RotateCcw, Square, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Flag, Pause, Play, RotateCcw, Square, Trash2 } from "lucide-react";
 import { releaseCapture, SessionRecorder } from "../lib/recorder";
 import { formatTime } from "./ui";
+import CameraBubble from "./CameraBubble";
+import { loadPrefs } from "../lib/prefs";
 import type { StartRequest } from "./Setup";
 
 type Result = { screen: Blob; camera: Blob | null; flags: number[] };
+
+/** Floating window layout, in CSS pixels: shared with Setup, which opens the window at the right size. */
+export const PIP = { width: 340, controls: 84, camera: 190, notes: 250 };
+const PIP_CAMERA_HEIGHT = PIP.camera - 20;
+
+export const pipHeight = (camera: boolean, notes: boolean) => PIP.controls + (camera ? PIP.camera : 0) + (notes ? PIP.notes : 0);
 
 export default function RecordingSession(props: { req: StartRequest; onDone: (r: Result) => void; onCancel: () => void }) {
   const { req } = props;
   const [count, setCount] = useState(req.countdown);
   const [take, setTake] = useState(0);
+  const [showCam, setShowCam] = useState(true);
+  const [camStyle] = useState(() => loadPrefs().lastStyle.camera);
+  // When sharing a whole screen, this floating window is captured too: the preview would show up in the video.
+  const fullScreen = req.cap.display.getVideoTracks()[0].getSettings().displaySurface === "monitor";
+  const toggleCam = () => {
+    // A click inside the floating window allows resizing it.
+    req.pip!.resizeBy(0, showCam ? -PIP.camera : PIP.camera);
+    setShowCam((v) => !v);
+  };
   const [scrollSpeed, setScrollSpeed] = useState(1);
   const noteEls = useRef(new Set<HTMLDivElement>());
   const [, setTick] = useState(0);
@@ -125,6 +142,9 @@ export default function RecordingSession(props: { req: StartRequest; onDone: (r:
       <button className="icon-btn" title="Flag this moment (F)" onClick={flag} disabled={!rec}><Flag size={16} />{flags > 0 && <span style={{ fontSize: 11, marginLeft: 2 }}>{flags}</span>}</button>
       <button className="icon-btn" title="Restart recording" onClick={restart} disabled={!rec}><RotateCcw size={16} /></button>
       <button className="icon-btn" title="Cancel recording" onClick={cancel}><Trash2 size={16} /></button>
+      {compact && req.cap.camera && (
+        <button className="icon-btn" title={showCam ? "Hide camera preview" : "Show camera preview"} onClick={toggleCam}>{showCam ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+      )}
     </div>
   );
 
@@ -143,6 +163,12 @@ export default function RecordingSession(props: { req: StartRequest; onDone: (r:
       {req.pip &&
         createPortal(
           <div className="pip">
+            {req.cap.camera && showCam && (
+              <div className="pip-cam">
+                <CameraBubble stream={req.cap.camera} cam={camStyle} height={PIP_CAMERA_HEIGHT} />
+                {fullScreen && <div className="pip-warn">Entire screen shared: this window is in the recording.</div>}
+              </div>
+            )}
             {hud(true)}
             {req.notes.trim() && prompter}
           </div>,

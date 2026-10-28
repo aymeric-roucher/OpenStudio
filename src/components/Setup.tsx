@@ -5,7 +5,8 @@ import { adoptStyles, Field, Segmented, Slider, Toggle } from "./ui";
 import { cameraStream, captureDisplay, micStream, type Captured } from "../lib/recorder";
 import { loadPrefs, savePrefs, type Prefs } from "../lib/prefs";
 import { nearestCorner } from "../lib/defaults";
-import { cameraCropRect } from "../lib/render";
+import CameraBubble from "./CameraBubble";
+import { PIP, pipHeight } from "./RecordingSession";
 import { WALLPAPERS, wallpaperCss } from "../lib/wallpapers";
 import type { CameraSettings } from "../lib/types";
 
@@ -52,12 +53,10 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [perm, setPerm] = useState<Perm | null>(null);
   const [camStream, setCamStream] = useState<MediaStream | null>(null);
-  const [camAspect, setCamAspect] = useState(16 / 9);
   const [micLevel, setMicLevel] = useState(0);
   const [dragging, setDragging] = useState(false);
   const micRef = useRef<MediaStream | null>(null);
   const handedOff = useRef(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -126,10 +125,6 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
     };
   }, [prefs.cameraId, perm]);
 
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.srcObject = camStream;
-  }, [camStream]);
-
   // Microphone level meter.
   useEffect(() => {
     if (!prefs.micId || !perm) return;
@@ -189,7 +184,7 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
     if (!api) return share(null);
     // Open the floating controls first, then pick the source from a click inside it:
     // a click there activates this page too, so the share picker always has a fresh user gesture.
-    const win = await api.requestWindow({ width: 340, height: prefs.notes.trim() ? 380 : 130 });
+    const win = await api.requestWindow({ width: PIP.width, height: pipHeight(camStream !== null, prefs.notes.trim() !== "") });
     adoptStyles(win);
     win.addEventListener("pagehide", () => setPip(null), { once: true });
     setPip(win);
@@ -212,17 +207,7 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
 
   const cams = devices.filter((d) => d.kind === "videoinput");
   const mics = devices.filter((d) => d.kind === "audioinput");
-  const stageH = stage.h;
-  const stageW = stage.w;
-  // Same geometry as the editor's compositor: anchored to a corner with equal gaps, crop sets the ratio.
-  const m = Math.min(stageW, stageH);
-  const bubbleH = cam.size * m;
-  const bubbleW = bubbleH * (cam.crop.aspect ?? camAspect);
-  const gap = cam.margin * m;
-  const left = cam.corner.endsWith("right") ? stageW - gap - bubbleW : gap;
-  const top = cam.corner.startsWith("bottom") ? stageH - gap - bubbleH : gap;
-  const radius = `${(cam.roundness * Math.min(bubbleW, bubbleH)) / 2}px`;
-  const crop = cameraCropRect(cam.crop, camAspect);
+  const gap = cam.margin * Math.min(stage.w, stage.h);
   const bg = prefs.lastStyle.background;
 
   return (
@@ -253,18 +238,15 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
               <div className="muted" style={{ fontSize: 12 }}>After clicking record, pick a screen, a window or a tab in your browser's share dialog.</div>
             </div>
             {camStream && cam.visible && (
-              <div className="stage-cam" onPointerDown={onCamDown} style={{ left, top, width: bubbleW, height: bubbleH, borderRadius: radius }} title="Drag to position your camera">
-                <div style={{ position: "absolute", inset: 0, transform: cam.mirror ? "scaleX(-1)" : undefined }}>
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    onLoadedMetadata={(e) => setCamAspect(e.currentTarget.videoWidth / e.currentTarget.videoHeight)}
-                    style={{ position: "absolute", objectFit: "fill", width: bubbleW / crop.w, height: bubbleH / crop.h, left: (-crop.x * bubbleW) / crop.w, top: (-crop.y * bubbleH) / crop.h }}
-                  />
-                </div>
-              </div>
+              <CameraBubble
+                className="stage-cam"
+                stream={camStream}
+                cam={cam}
+                height={cam.size * Math.min(stage.w, stage.h)}
+                style={{ position: "absolute", [cam.corner.endsWith("right") ? "right" : "left"]: gap, [cam.corner.startsWith("bottom") ? "bottom" : "top"]: gap }}
+                onPointerDown={onCamDown}
+                title="Drag to another corner"
+              />
             )}
           </div>
           {dragging && <div className="drop-hint">Drop a video to edit it</div>}
@@ -322,6 +304,7 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
       {pip &&
         createPortal(
           <div className="pip" style={{ justifyContent: "center" }}>
+            {camStream && <div className="pip-cam"><CameraBubble stream={camStream} cam={cam} height={PIP.camera - 20} /></div>}
             <button className="record-btn" onClick={() => share(pip)}><Video size={18} /> Choose what to share</button>
             <button className="btn ghost block" onClick={() => pip.close()}>Cancel</button>
           </div>,

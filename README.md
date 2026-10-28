@@ -20,7 +20,7 @@ Best in a recent Chromium browser (Chrome, Edge, Arc, Brave). Firefox and Safari
 - Camera and microphone with device pickers, live preview and level meter. Drag the camera bubble to place it before recording, pick its shape and size.
 - Optional system or tab audio, mixed with the microphone.
 - Countdown before recording (off, 3, 5 or 10 seconds).
-- Floating controls window (Document Picture-in-Picture): timer, stop, pause and resume, restart, cancel, flag a moment (F), speaker notes.
+- Floating window that stays above other apps (Document Picture-in-Picture): live camera preview shaped like your bubble, timer, stop, pause and resume, restart, cancel, flag a moment (F), speaker notes. When sharing an entire screen the browser cannot hide this window from the capture, so the camera preview can be hidden with one click.
 - Screen and camera are recorded as separate files, so the camera stays fully editable.
 - Open an existing video file instead of recording (button or drag and drop).
 
