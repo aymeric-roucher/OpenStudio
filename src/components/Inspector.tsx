@@ -9,6 +9,7 @@ import { transcribe, type TranscribeProgress, type WhisperModel } from "../lib/t
 import { outputSize } from "../lib/layout";
 import { frameRect } from "../lib/render";
 import { download } from "../lib/media";
+import { toSubtitles } from "../lib/subtitles";
 import type { Background, CameraSettings, Project, Style, ZoomRegion } from "../lib/types";
 import type { EditorApi } from "./Editor";
 import { Field, Segmented, Slider, Toggle } from "./ui";
@@ -93,8 +94,11 @@ function SelectionPanel({ api, deleteSelected }: { api: EditorApi; deleteSelecte
         <Field label="Custom speed">
           <Slider value={s.speed} min={0.25} max={8} step={0.05} onChange={set} format={(v) => `${v.toFixed(2)}x`} />
         </Field>
+        <Field label="Clip volume">
+          <Slider value={s.volume} min={0} max={2} onChange={(volume) => update((x) => ({ ...x, segments: x.segments.map((y) => (y.id === s.id ? { ...y, volume } : y)) }), `clip-volume-${s.id}`)} format={pct} />
+        </Field>
         <p className="muted" style={{ lineHeight: 1.5 }}>
-          Plays {(s.end - s.start).toFixed(1)} s of the recording in {((s.end - s.start) / s.speed).toFixed(1)} s. Drag the clip edges on the timeline to trim, press S to split at the playhead.
+          Plays {(s.end - s.start).toFixed(1)} s of the recording in {((s.end - s.start) / s.speed).toFixed(1)} s. Drag the clip edges on the timeline to trim, press C to split at the playhead.
         </p>
       </>
     );
@@ -232,6 +236,14 @@ function BackgroundPanel({ api }: { api: EditorApi }) {
       <Field label="Inset border">
         <Slider value={p.inset} min={0} max={6} step={0.5} onChange={(inset) => set({ inset }, "inset")} format={(v) => `${v}px`} />
       </Field>
+      <div className="divider" />
+      <h3>Animations</h3>
+      <Field label="Zoom speed">
+        <Segmented value={p.zoomSpeed} onChange={(zoomSpeed) => set({ zoomSpeed }, "zoom-speed")} options={[{ value: "slow", label: "Slow" }, { value: "mellow", label: "Mellow" }, { value: "quick", label: "Quick" }, { value: "rapid", label: "Rapid" }]} />
+      </Field>
+      <Field label="Motion blur" extra={<span className="dim">applied on export</span>}>
+        <Slider value={p.motionBlur} min={0} max={1} onChange={(motionBlur) => set({ motionBlur }, "motion-blur")} format={pct} />
+      </Field>
     </>
   );
 }
@@ -321,6 +333,13 @@ function CaptionsPanel({ api }: { api: EditorApi }) {
           <Field label="Vertical position">
             <Slider value={s.y} min={0.08} max={0.95} onChange={(y) => setStyle({ y }, "cap-y")} format={pct} />
           </Field>
+          <div className="row field">
+            {(["srt", "vtt"] as const).map((f) => (
+              <button key={f} className="btn grow" onClick={() => download(new Blob([toSubtitles(p.captions, p.segments, f)], { type: "text/plain" }), `${p.name.replace(/[^\w\- ]+/g, "").trim() || "captions"}.${f}`)}>
+                <Download size={15} /> {f.toUpperCase()}
+              </button>
+            ))}
+          </div>
           <Field label="Transcript" extra={<button className="btn ghost small" onClick={() => update((x) => ({ ...x, captions: [] }))}>Clear</button>}>
             <div className="caption-list">
               {p.captions.map((c) => (

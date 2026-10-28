@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { freeSlot, moveRegion, outputSpanToSource, regionsToOutput, sourceRangeToOutput, speedUpRanges, outputDuration, outputToSource, sourceToOutput, splitAt, trimEdge } from "./timeline";
 import { zoomViewport } from "./zoom";
+import { toSubtitles } from "./subtitles";
 import { fitFrame, outputSize } from "./layout";
 import { exportPlan, gifDelay } from "./exporter";
 import { groupWords } from "./transcribe";
+import { timeStretch } from "./timestretch";
 import type { Segment, ZoomRegion } from "./types";
 
 const segs: Segment[] = [
@@ -134,6 +136,20 @@ describe("layout", () => {
   });
 });
 
+describe("subtitles", () => {
+  const caps = [
+    { id: "1", start: 1, end: 2.5, text: "Hello there" },
+    { id: "2", start: 4.2, end: 5, text: "cut away" },
+    { id: "3", start: 6, end: 8, text: "Fast part" },
+  ];
+  it.each([
+    ["srt", "1\n00:00:01,000 --> 00:00:02,500\nHello there\n\n2\n00:00:04,000 --> 00:00:05,000\nFast part\n"],
+    ["vtt", "WEBVTT\n\n00:00:01.000 --> 00:00:02.500\nHello there\n\n00:00:04.000 --> 00:00:05.000\nFast part\n"],
+  ] as const)("%s follows the edited timeline", (format, expected) => {
+    expect(toSubtitles(caps, segs, format)).toBe(expected);
+  });
+});
+
 describe("captions", () => {
   const w = (text: string, start: number, end: number) => ({ text, start, end });
   it.each([
@@ -226,5 +242,26 @@ describe("autozoom", async () => {
       expect(r.start).toBeCloseTo(expected[i].start);
       expect(r.end).toBeCloseTo(expected[i].end);
     });
+  });
+});
+
+describe("timeStretch", () => {
+  const sr = 48000;
+  const crossings = (x: Float32Array) => x.reduce((n, v, i) => n + (i > 0 && (x[i - 1] < 0) !== (v < 0) ? 1 : 0), 0);
+  const rms = (x: Float32Array) => Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
+
+  it.each([
+    [440, 2, 1],
+    [440, 0.5, 2],
+    [150, 1.5, 2],
+  ])("a %d Hz sine stretched at rate %d keeps its frequency and level (%d channels)", (freq, rate, channels) => {
+    const sine = Float32Array.from({ length: 2 * sr }, (_, i) => Math.sin((2 * Math.PI * freq * i) / sr));
+    const out = timeStretch(Array.from({ length: channels }, () => sine), rate, sr);
+    expect(out).toHaveLength(channels);
+    for (const c of out) {
+      expect(c.length).toBe(Math.round(sine.length / rate));
+      expect(crossings(c) / 2 / (c.length / sr)).toBeCloseTo(freq, -0.5);
+      expect(rms(c)).toBeCloseTo(Math.SQRT1_2, 1);
+    }
   });
 });

@@ -1,9 +1,9 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { AudioWaveform, EyeOff, SquareUser, Flag, Pause, Play, Plus, Scissors, SkipBack, SkipForward, ZoomIn } from "lucide-react";
+import { AudioWaveform, EyeOff, Rows3, SquareUser, Flag, Pause, Play, Plus, Scissors, SkipBack, SkipForward, ZoomIn } from "lucide-react";
 import { audioPeaks } from "../lib/media";
 import { freeSlot, moveRegion, outputSpanToSource, segmentOffsets, sourceRangeToOutput, trimEdge } from "../lib/timeline";
 import { onTimeline } from "../lib/render";
-import type { Segment } from "../lib/types";
+import type { Project, Segment } from "../lib/types";
 import type { EditorApi } from "./Editor";
 import { Dropdown, formatTime, Slider } from "./ui";
 
@@ -12,6 +12,8 @@ const TICKS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
 const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 3, 4, 8];
 
 type RegionKind = "zoom" | "mask" | "layout";
+type MenuItem = { label: string; run: () => void } | "sep";
+type OpenMenu = (e: React.MouseEvent, items: MenuItem[]) => void;
 type Span = { id: string; start: number; end: number };
 
 /** Pointer drag that reports horizontal movement in seconds. */
@@ -68,6 +70,8 @@ function RegionTrack<T extends Span>(props: {
   /** Store a region's new output span (converted back to source seconds by the caller). */
   setSpan: (id: string, start: number, end: number, coalesce: string) => void;
   onAdd: (kind: RegionKind, at: number) => void;
+  menu: (r: T) => MenuItem[];
+  openMenu: OpenMenu;
 }) {
   const { api, kind, regions, pps, duration } = props;
   const [ghost, setGhost] = useState<[number, number] | null>(null);
@@ -93,6 +97,7 @@ function RegionTrack<T extends Span>(props: {
       {regions.map((r) => {
         const selected = api.sel?.kind === kind && api.sel.id === r.id;
         const drag = (mode: "move" | "start" | "end") => (e: React.PointerEvent) => {
+          if (e.button !== 0) return;
           api.setSel({ kind, id: r.id });
           dragSeconds(
             e,
@@ -112,6 +117,10 @@ function RegionTrack<T extends Span>(props: {
             onPointerDown={drag("move")}
             onMouseMove={(e) => e.stopPropagation()}
             onMouseEnter={() => setGhost(null)}
+            onContextMenu={(e) => {
+              api.setSel({ kind, id: r.id });
+              props.openMenu(e, props.menu(r));
+            }}
           >
             <div className="edge l" onPointerDown={drag("start")} />
             <span className="label">{props.label(r)}</span>
@@ -138,6 +147,26 @@ export default function Timeline(props: {
   const [scrubber, setScrubber] = useState(true);
   const [peaks, setPeaks] = useState<{ peaks: Float32Array; rate: number } | null>(null);
   const [hoverT, setHoverT] = useState<number | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const openMenu: OpenMenu = (e, items) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY, items });
+  };
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [menu]);
+  const remove = (key: "zooms" | "masks" | "cameraLayouts" | "segments", id: string) => () => {
+    if (key === "segments" && p.segments.length === 1) return api.notify("Cannot delete the only clip. Split it first.");
+    api.update((x) => ({ ...x, [key]: (x[key] as { id: string }[]).filter((r) => r.id !== id) }));
+    api.setSel(null);
+  };
+  const patch = <K extends "zooms" | "masks" | "cameraLayouts" | "segments">(key: K, id: string, change: Partial<Project[K][number]>) => () =>
+    api.update((x) => ({ ...x, [key]: (x[key] as { id: string }[]).map((r) => (r.id === id ? { ...r, ...change } : r)) }));
   const saved = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -221,7 +250,7 @@ export default function Timeline(props: {
     <div className="timeline">
       <div className="transport">
         <div className="left">
-          <button className="icon-btn" title="Split clip at playhead (S)" onClick={props.onSplit}><Scissors size={17} /></button>
+          <button className="icon-btn" title="Split clip at playhead (C)" onClick={props.onSplit}><Scissors size={17} /></button>
           <button className="icon-btn" title="Add zoom at playhead (Z)" onClick={() => props.onAdd("zoom", time)}><ZoomIn size={17} /></button>
           <button className="icon-btn" title="Add blur or highlight mask (M)" onClick={() => props.onAdd("mask", time)}><EyeOff size={17} /></button>
           {rec.camera && <button className="icon-btn" title="Add camera layout change (L)" onClick={() => props.onAdd("layout", time)}><SquareUser size={17} /></button>}
@@ -236,6 +265,7 @@ export default function Timeline(props: {
           <span className="time">{formatTime(duration)}</span>
         </div>
         <div className="right">
+          <button className={`icon-btn ${showAll ? "active" : ""}`} title="Show all tracks" onClick={() => setShowAll((v) => !v)}><Rows3 size={17} /></button>
           <button className={`icon-btn ${scrubber ? "active" : ""}`} title="Scrubber: preview frames by hovering the timeline" onClick={() => setScrubber((s) => !s)}><AudioWaveform size={17} /></button>
           <Dropdown
             align="right"
@@ -280,15 +310,28 @@ export default function Timeline(props: {
                   className={`tl-block clip-block ${selected ? "selected" : ""}`}
                   style={{ left: offsets[i] * pps + 1, width: Math.max(4, len * pps - 2) }}
                   onPointerDown={(e) => {
+                    if (e.button !== 0) return;
                     api.setSel({ kind: "segment", id: s.id });
                     commitSeek(timeAt(e.clientX));
+                  }}
+                  onContextMenu={(e) => {
+                    api.setSel({ kind: "segment", id: s.id });
+                    const at = timeAt(e.clientX);
+                    openMenu(e, [
+                      { label: "Split here", run: () => { commitSeek(at); props.onSplit(); } },
+                      "sep",
+                      ...SPEEDS.map((v) => ({ label: `Speed ${v}x${v === s.speed ? "  (current)" : ""}`, run: patch("segments", s.id, { speed: v }) })),
+                      "sep",
+                      { label: s.volume === 0 ? "Unmute clip" : "Mute clip", run: patch("segments", s.id, { volume: s.volume === 0 ? 1 : 0 }) },
+                      { label: "Delete clip", run: remove("segments", s.id) },
+                    ]);
                   }}
                 >
                   {peaks && <Waveform peaks={peaks.peaks} rate={peaks.rate} seg={s} width={len * pps} />}
                   <div className="edge l" onPointerDown={trim("start")} />
                   <span className="label">
                     <small>Clip</small>
-                    {len.toFixed(1)}s · {s.speed}x
+                    {len.toFixed(1)}s · {s.speed}x{s.volume !== 1 && ` · ${s.volume === 0 ? "muted" : `${Math.round(s.volume * 100)}%`}`}
                   </span>
                   <div className="edge r" onPointerDown={trim("end")} />
                 </div>
@@ -302,21 +345,40 @@ export default function Timeline(props: {
             label={(z) => (<><small>Zoom</small>{z.scale.toFixed(1)}x · {z.instant ? "Instant" : "Smooth"}</>)}
             setSpan={setSpan("zooms")}
             onAdd={props.onAdd}
+            openMenu={openMenu}
+            menu={(z) => [
+              { label: z.instant ? "Make it smooth" : "Make it instant", run: patch("zooms", z.id, { instant: !z.instant }) },
+              ...[1.5, 2, 2.5, 3].map((v) => ({ label: `Zoom ${v}x`, run: patch("zooms", z.id, { scale: v }) })),
+              "sep" as const,
+              { label: "Delete zoom", run: remove("zooms", z.id) },
+            ]}
           />
-          <RegionTrack
+          {(tl.masks.length > 0 || showAll) && <RegionTrack
             api={api} kind="mask" regions={tl.masks} pps={pps} duration={duration} className="mask-block"
             emptyLabel="Click to add a blur or highlight" addLabel="Mask"
             label={(m) => (<><small>Mask</small>{m.kind}</>)}
             setSpan={setSpan("masks")}
             onAdd={props.onAdd}
-          />
-          {rec.camera && (
+            openMenu={openMenu}
+            menu={(m) => [
+              ...(["blur", "pixelate", "highlight"] as const).map((k) => ({ label: `Effect: ${k}`, run: patch("masks", m.id, { kind: k }) })),
+              "sep" as const,
+              { label: "Delete mask", run: remove("masks", m.id) },
+            ]}
+          />}
+          {rec.camera && (tl.cameraLayouts.length > 0 || showAll) && (
             <RegionTrack
               api={api} kind="layout" regions={tl.cameraLayouts} pps={pps} duration={duration} className="layout-block"
               emptyLabel="Click to change the camera layout for a section" addLabel="Camera layout"
               label={(l) => (<><small>Camera</small>{l.layout}</>)}
               setSpan={setSpan("cameraLayouts")}
               onAdd={props.onAdd}
+              openMenu={openMenu}
+              menu={(l) => [
+                ...([["fullscreen", "Camera fullscreen"], ["side", "Side by side"], ["hidden", "Hide camera"]] as const).map(([k, label]) => ({ label, run: patch("cameraLayouts", l.id, { layout: k }) })),
+                "sep" as const,
+                { label: "Delete layout change", run: remove("cameraLayouts", l.id) },
+              ]}
             />
           )}
           {captions.length > 0 && (
@@ -338,6 +400,13 @@ export default function Timeline(props: {
             </div>
           )}
 
+          {menu && (
+            <div className="menu" style={{ position: "fixed", left: menu.x, top: menu.y, transform: menu.y > window.innerHeight - 320 ? "translateY(-100%)" : undefined }} onPointerDown={(e) => e.stopPropagation()}>
+              {menu.items.map((it, i) =>
+                it === "sep" ? <div key={i} className="sep" /> : <button key={i} onClick={() => { setMenu(null); it.run(); }}>{it.label}</button>,
+              )}
+            </div>
+          )}
           <div className="playhead" style={{ left: PAD + (saved.current ?? time) * pps }} />
           {hoverT !== null && <div className="hover-line" style={{ left: PAD + hoverT * pps }} />}
         </div>

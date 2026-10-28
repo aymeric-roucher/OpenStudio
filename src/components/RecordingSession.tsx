@@ -11,6 +11,8 @@ export default function RecordingSession(props: { req: StartRequest; onDone: (r:
   const { req } = props;
   const [count, setCount] = useState(req.countdown);
   const [take, setTake] = useState(0);
+  const [scrollSpeed, setScrollSpeed] = useState(1);
+  const noteEls = useRef(new Set<HTMLDivElement>());
   const [, setTick] = useState(0);
   const [flags, setFlags] = useState(0);
   const recRef = useRef<SessionRecorder | null>(null);
@@ -102,6 +104,18 @@ export default function RecordingSession(props: { req: StartRequest; onDone: (r:
 
   const rec = recRef.current;
   const counting = count > 0;
+  const scrolling = rec && !rec.paused && scrollSpeed > 0;
+  const prompter = (
+    <div className="prompter">
+      <div className="row" style={{ justifyContent: "flex-end", gap: 4 }}>
+        <span className="dim" style={{ fontSize: 12 }}>Auto scroll</span>
+        {[0, 1, 2, 3].map((v) => (
+          <button key={v} className={`btn small ${scrollSpeed === v ? "primary" : "ghost"}`} onClick={() => setScrollSpeed(v)}>{v ? `${v}x` : "Off"}</button>
+        ))}
+      </div>
+      <div className="notes" ref={(el) => { if (el) noteEls.current.add(el); }}>{req.notes}</div>
+    </div>
+  );
   const hud = (compact: boolean) => (
     <div className="rec-hud" style={compact ? { borderRadius: 12 } : undefined}>
       <span className={`rec-dot ${rec?.paused || counting ? "paused" : ""}`} style={{ marginLeft: 8 }} />
@@ -114,16 +128,23 @@ export default function RecordingSession(props: { req: StartRequest; onDone: (r:
     </div>
   );
 
+  // Teleprompter: scroll the notes while recording.
+  useEffect(() => {
+    if (!scrolling) return;
+    const id = setInterval(() => noteEls.current.forEach((el) => (el.isConnected ? (el.scrollTop += scrollSpeed * 0.75) : noteEls.current.delete(el))), 30);
+    return () => clearInterval(id);
+  }, [scrolling, scrollSpeed]);
+
   return (
     <div className="rec-screen">
       {counting ? <div className="countdown" key={count}>{count}</div> : <div className="muted">Recording. Switch to what you want to capture.</div>}
       {hud(false)}
-      {req.notes.trim() && <div className="notes">{req.notes}</div>}
+      {req.notes.trim() && prompter}
       {req.pip &&
         createPortal(
           <div className="pip">
             {hud(true)}
-            {req.notes.trim() && <div className="notes">{req.notes}</div>}
+            {req.notes.trim() && prompter}
           </div>,
           req.pip.document.body,
         )}

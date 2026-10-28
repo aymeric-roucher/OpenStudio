@@ -118,7 +118,38 @@ export function CropModal(props: { api: EditorApi; onClose: () => void }) {
         </div>
       </div>
       <div className="row" style={{ marginTop: 16 }}>
-        <span className="muted mono">{Math.round(rect.w * v.videoWidth)} × {Math.round(rect.h * v.videoHeight)} px</span>
+        <Segmented
+          value={-1}
+          onChange={(ratio: number) => {
+            // Largest centered area with this pixel aspect ratio.
+            const vw = v.videoWidth, vh = v.videoHeight;
+            const w = Math.min(vw, vh * ratio), h = w / ratio;
+            setRect({ x: (vw - w) / 2 / vw, y: (vh - h) / 2 / vh, w: w / vw, h: h / vh });
+          }}
+          options={[{ value: 16 / 9, label: "16:9" }, { value: 4 / 3, label: "4:3" }, { value: 1, label: "1:1" }, { value: 9 / 16, label: "9:16" }]}
+        />
+        <div className="grow" />
+        {(["w", "h"] as const).map((k) => {
+          const full = k === "w" ? v.videoWidth : v.videoHeight;
+          const pos = k === "w" ? "x" : "y";
+          return (
+            <input
+              key={k}
+              className="input mono"
+              type="number"
+              style={{ width: 84 }}
+              title={k === "w" ? "Width in pixels" : "Height in pixels"}
+              value={Math.round(rect[k] * full)}
+              onChange={(e) => {
+                const size = Math.min(Math.max(Number(e.target.value) / full, 0.05), 1);
+                setRect({ ...rect, [k]: size, [pos]: Math.min(rect[pos], 1 - size) });
+              }}
+            />
+          );
+        })}
+        <span className="muted">px</span>
+      </div>
+      <div className="row" style={{ marginTop: 12 }}>
         <div className="grow" />
         <button className="btn ghost" onClick={() => setRect({ x: 0, y: 0, w: 1, h: 1 })}>Reset</button>
         <button className="btn" onClick={props.onClose}>Cancel</button>

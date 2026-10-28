@@ -26,7 +26,7 @@ Best in a recent Chromium browser (Chrome, Edge, Arc, Brave). Firefox and Safari
 
 **Editing**
 - Timeline with a clip track (audio waveform), zoom track, mask track, camera layout track and caption track. Hover scrubbing, frame stepping, timeline zoom, recording flags on the ruler.
-- Split (S), trim by dragging clip edges, delete clips, per-clip speed from 0.25x to 8x.
+- Split (C), trim by dragging clip edges, delete clips, per-clip speed from 0.25x to 8x.
 - Zooms (Z): smooth or instant, zoom level, focus point picked on the preview or in the panel.
 - Masks (M): blur, pixelate, or highlight an area for a time range.
 - Dynamic camera layouts (L): fullscreen camera, side by side (stacked on vertical canvases), or hidden for a section, with animated transitions. The bubble can shrink while zoomed in.

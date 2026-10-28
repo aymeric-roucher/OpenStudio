@@ -221,15 +221,15 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
 
   const actions: Action[] = [
     { id: "play", label: playing ? "Pause" : "Play", keys: "Space", run: togglePlay },
-    { id: "split", label: "Split clip at playhead", keys: "S", run: split },
+    { id: "split", label: "Split clip at playhead", keys: "C or S", run: split },
     { id: "zoom", label: "Add zoom at playhead", keys: "Z", run: () => addRegion("zoom") },
     { id: "mask", label: "Add blur or highlight mask", keys: "M", run: () => addRegion("mask") },
     { id: "layout", label: "Add camera layout change", keys: "L", run: () => addRegion("layout") },
     { id: "delete", label: "Delete selected item", keys: "⌫", run: deleteSelected },
     { id: "undo", label: "Undo", keys: "⌘Z", run: h.undo },
     { id: "redo", label: "Redo", keys: "⇧⌘Z", run: h.redo },
-    { id: "crop", label: "Crop recording", keys: "C", run: () => setModal("crop") },
-    { id: "copy", label: "Copy current frame as image", keys: "⇧⌘C", run: copyFrame },
+    { id: "crop", label: "Crop recording", keys: "R", run: () => setModal("crop") },
+    { id: "copy", label: "Copy current frame as image", keys: "⌘C", run: copyFrame },
     { id: "export", label: "Export video", keys: "⌘E", run: () => setModal("export") },
     { id: "raw", label: "Download raw recording files", run: downloadRaw },
     { id: "start", label: "Go to start", keys: "Home", run: () => player.seek(0) },
@@ -256,14 +256,14 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
     if (mod && k === "z") return run(e.shiftKey ? h.redo : h.undo);
     if (mod && k === "y") return run(h.redo);
     if (mod && k === "e") return run(() => setModal("export"));
-    if (mod && e.shiftKey && k === "c") return run(copyFrame);
+    if (mod && k === "c" && !window.getSelection()?.toString()) return run(copyFrame);
     if (mod) return;
     if (k === " ") return run(togglePlay);
-    if (k === "s") return run(split);
+    if (k === "s" || k === "c") return run(split);
     if (k === "z") return run(() => addRegion("zoom"));
     if (k === "m") return run(() => addRegion("mask"));
     if (k === "l") return run(() => addRegion("layout"));
-    if (k === "c") return run(() => setModal("crop"));
+    if (k === "r") return run(() => setModal("crop"));
     if (k === "backspace" || k === "delete") return run(deleteSelected);
     if (k === "escape") return run(() => setSel(null));
     if (k === "home") return run(() => player.seek(0));
@@ -396,7 +396,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
             </Dropdown>
             <button className="btn ghost" onClick={() => setModal("crop")}><Crop size={15} /> Crop</button>
             <div className="grow" />
-            <button className="btn ghost" title="Copy current frame (⇧⌘C)" onClick={copyFrame}><Clipboard size={15} /> Copy frame</button>
+            <button className="btn ghost" title="Copy current frame (⌘C)" onClick={copyFrame}><Clipboard size={15} /> Copy frame</button>
             <Dropdown
               align="right"
               trigger={(toggle) => (
@@ -450,7 +450,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
       {modal === "crop" && <CropModal api={api} onClose={() => setModal(null)} />}
       {modal === "export" && <ExportDialog api={api} bgImage={bgImage} onClose={() => setModal(null)} />}
       {modal === "command" && <CommandMenu actions={actions} onClose={() => setModal(null)} />}
-      {notice && <div className="error-banner" style={{ background: "var(--panel-2)", borderColor: "var(--border-2)", color: "var(--text)" }}>{notice}</div>}
+      {notice && <div className="toast">{notice}</div>}
     </div>
   );
 }
