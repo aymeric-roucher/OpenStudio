@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import Setup, { type StartRequest } from "./components/Setup";
 import RecordingSession from "./components/RecordingSession";
 import Editor from "./components/Editor";
+import SiteFooter from "./components/SiteFooter";
 import { loadRecording } from "./lib/media";
 import { loadPrefs } from "./lib/prefs";
 import type { Recording, Style } from "./lib/types";
@@ -51,32 +52,35 @@ export default function App() {
 
   return (
     <>
-      {phase.kind === "setup" && (
-        <Setup
-          onStart={(req) => setPhase({ kind: "recording", req })}
-          onImport={(file) => run(open(file, null, [], false))}
-        />
-      )}
-      {phase.kind === "recording" && (
-        <RecordingSession
-          req={phase.req}
-          onDone={(r) => run(open(r.screen, r.camera, r.flags, true))}
-          onCancel={() => setPhase({ kind: "setup" })}
-        />
-      )}
-      {phase.kind === "loading" && (
-        <div className="rec-screen">
-          <div className="brand"><span className="brand-dot" /> OpenStudio</div>
-          <div className="muted">{phase.message}</div>
-        </div>
-      )}
-      {phase.kind === "editor" && (
-        <Editor
-          rec={phase.rec}
-          initialStyle={phase.style}
-          onNew={() => setPhase({ kind: "setup" })}
-        />
-      )}
+      <div className="app-viewport">
+        {phase.kind === "setup" && (
+          <Setup
+            onStart={(req) => setPhase({ kind: "recording", req })}
+            onImport={(file) => run(open(file, null, [], false))}
+          />
+        )}
+        {phase.kind === "recording" && (
+          <RecordingSession
+            req={phase.req}
+            onDone={(r) => run(open(r.screen, r.camera, r.flags, true))}
+            onCancel={() => setPhase({ kind: "setup" })}
+          />
+        )}
+        {phase.kind === "loading" && (
+          <div className="rec-screen">
+            <div className="brand"><span className="brand-dot" /> OpenStudio</div>
+            <div className="muted">{phase.message}</div>
+          </div>
+        )}
+        {phase.kind === "editor" && (
+          <Editor
+            rec={phase.rec}
+            initialStyle={phase.style}
+            onNew={() => setPhase({ kind: "setup" })}
+          />
+        )}
+      </div>
+      <SiteFooter />
       {error && (
         <div className="error-banner">
           <span>{error}</span>

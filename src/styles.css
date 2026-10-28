@@ -30,7 +30,11 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { margin: 0; height: 100%; overflow: hidden; }
+html, body { margin: 0; overflow-x: hidden; }
+/* The app fills the window; the credits footer sits below it and shows on scroll. */
+.app-viewport { height: 100vh; overflow: hidden; }
+/* Scrolling to the end of an inner panel must not scroll the page down to the footer. */
+.inspector, .setup-side, .tl-scroll, .notes, .modal, .menu { overscroll-behavior: contain; }
 button { font: inherit; color: inherit; cursor: pointer; }
 input, select, textarea { font: inherit; color: inherit; }
 ::selection { background: var(--accent-soft); }
@@ -249,3 +253,8 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .menu .custom-size .input { width: 72px; height: 28px; padding: 0 6px; }
 .menu .custom-size .btn { width: auto; display: inline-flex; justify-content: center; padding: 0 10px; border-radius: 6px; }
 .menu .custom-size .btn.primary:hover { background: var(--accent-2); }
+
+.site-footer { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px 22px; padding: 28px 24px; border-top: 1px solid var(--border); background: var(--bg-2); color: var(--muted); font-size: 13px; }
+.site-footer a { color: var(--text); text-decoration: none; border-bottom: 1px solid transparent; transition: color 0.12s, border-color 0.12s; }
+.site-footer a:hover { color: var(--accent); border-bottom-color: currentColor; }
+.site-footer-repo { display: inline-flex; align-items: center; gap: 6px; }
