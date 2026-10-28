@@ -109,8 +109,10 @@ describe("zoom", () => {
     ["before region: full view", 0, { x: 0, y: 0, w: 1, h: 1 }],
     ["fully zoomed: focus clamped inside frame", 4, { x: 0.5, y: 0.25, w: 0.5, h: 0.5 }],
     ["after region: full view", 7, { x: 0, y: 0, w: 1, h: 1 }],
-  ])("%s", (_name, t, expected) => {
-    const v = zoomViewport(zooms, t, 0.6);
+    ["base view outside zooms", 0, { x: 0.25, y: 0, w: 0.5, h: 0.5 }, { x: 0.25, y: 0, w: 0.5, h: 0.5 }],
+    ["zoom is relative to the base view", 4, { x: 0.75, y: 0.375, w: 0.25, h: 0.25 }, { x: 0.25, y: 0, w: 0.5, h: 0.5 }],
+  ])("%s", (_name, t, expected, base?: { x: number; y: number; w: number; h: number }) => {
+    const v = zoomViewport(zooms, t, 0.6, base);
     expect(v.x).toBeCloseTo(expected.x);
     expect(v.y).toBeCloseTo(expected.y);
     expect(v.w).toBeCloseTo(expected.w);

@@ -236,6 +236,7 @@ function BackgroundPanel({ api }: { api: EditorApi }) {
       <Field label="Inset border">
         <Slider value={p.inset} min={0} max={6} step={0.5} onChange={(inset) => set({ inset }, "inset")} format={(v) => `${v}px`} />
       </Field>
+      <Toggle label="Keep zoomed in (fill the canvas)" value={p.keepZoomedIn} onChange={(keepZoomedIn) => set({ keepZoomedIn }, "keep-zoomed")} />
       <div className="divider" />
       <h3>Animations</h3>
       <Field label="Zoom speed">

@@ -93,6 +93,8 @@ export type Style = {
   zoomSpeed: ZoomSpeed;
   /** Motion blur strength applied on export while the view moves, 0 = off. */
   motionBlur: number;
+  /** Fill the canvas with the screen even when aspect ratios differ (e.g. vertical videos), panning to the focus. */
+  keepZoomedIn: boolean;
 };
 
 export type ZoomSpeed = "slow" | "mellow" | "quick" | "rapid";

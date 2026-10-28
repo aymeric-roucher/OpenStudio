@@ -279,7 +279,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
 
   // ---------- preview interactions ----------
 
-  const view = viewAt(p, time);
+  const view = viewAt(p, time, { W: ow, H: oh, screenW: rec.width, screenH: rec.height });
   const toDisplay = (x: number, y: number) => ({ x: ((x - view.x) / view.w) * display.w, y: ((y - view.y) / view.h) * display.h });
   const selZoom = sel?.kind === "zoom" ? p.zooms.find((z) => z.id === sel.id) : undefined;
   const selMask = sel?.kind === "mask" ? p.masks.find((m) => m.id === sel.id) : undefined;

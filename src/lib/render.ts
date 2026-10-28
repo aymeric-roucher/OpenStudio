@@ -54,9 +54,22 @@ export function onTimeline(p: Project): Project {
   return q;
 }
 
-/** Zoom view at output time t. */
-export function viewAt(p: Project, t: number): Rect {
-  return zoomViewport(onTimeline(p).zooms, t, ZOOM_TRANSITION[p.zoomSpeed]);
+export type Dims = { W: number; H: number; screenW: number; screenH: number };
+
+/** View outside of zooms: the full canvas, or the screen frame filling it when "keep zoomed in" is on. */
+function baseView(p: Project, t: number, d: Dims): Rect {
+  const f = frameRect(p, d.W, d.H, d.screenW, d.screenH, t);
+  const w = Math.min(f.w / d.W, f.h / d.H);
+  const clampC = (c: number, lo: number, hi: number) => Math.min(Math.max(c, lo + w / 2), hi - w / 2);
+  const cx = clampC((f.x + f.w / 2) / d.W, f.x / d.W, (f.x + f.w) / d.W);
+  const cy = clampC((f.y + f.h / 2) / d.H, f.y / d.H, (f.y + f.h) / d.H);
+  return { x: cx - w / 2, y: cy - w / 2, w, h: w };
+}
+
+/** Zoom view at output time t. Pass the canvas and screen sizes to honour "keep zoomed in". */
+export function viewAt(p: Project, t: number, dims?: Dims): Rect {
+  const base = p.keepZoomedIn && dims ? baseView(p, t, dims) : undefined;
+  return zoomViewport(onTimeline(p).zooms, t, ZOOM_TRANSITION[p.zoomSpeed], base);
 }
 
 // ---------- shadows ----------
@@ -293,7 +306,7 @@ export function cameraState(project: Project, W: number, H: number, camAspect: n
 export function renderFrame(ctx: Ctx2D, W: number, H: number, project: Project, src: FrameSources, t: number): void {
   const p = onTimeline(project);
   const m = Math.min(W, H);
-  const view = viewAt(project, t);
+  const view = viewAt(project, t, { W, H, screenW: src.screenW, screenH: src.screenH });
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);

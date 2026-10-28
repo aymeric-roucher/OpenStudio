@@ -20,12 +20,12 @@ import {
   type VideoCodec,
   type VideoSample,
 } from "mediabunny";
-// @ts-expect-error gifenc ships no type declarations
 import { GIFEncoder, applyPalette, quantize } from "gifenc";
 import { outputSize } from "./layout";
-import { renderFrame } from "./render";
+import { cameraState, frameRect, renderFrame, viewAt, type FrameSources } from "./render";
+import { timeStretch } from "./timestretch";
 import { outputDuration, outputToSource, segmentOffsets } from "./timeline";
-import type { Project, Recording } from "./types";
+import type { Project, Rect, Recording } from "./types";
 
 export type ExportFormat = "mp4" | "webm" | "gif";
 export type ExportSettings = {
@@ -36,21 +36,15 @@ export type ExportSettings = {
   quality: "low" | "medium" | "high";
 };
 
-type GifEncoder = {
-  writeFrame(index: Uint8Array, w: number, h: number, opts: { palette: number[][]; delay: number }): void;
-  finish(): void;
-  bytes(): Uint8Array<ArrayBuffer>;
-};
-const gifenc = { GIFEncoder, applyPalette, quantize } as {
-  GIFEncoder: () => GifEncoder;
-  quantize: (rgba: Uint8ClampedArray, maxColors: number) => number[][];
-  applyPalette: (rgba: Uint8ClampedArray, palette: number[][]) => Uint8Array;
-};
-
 const GIF_MAX_FPS = 15;
 const GIF_MAX_LONG = 960;
 const SAMPLE_RATE = 48000;
 const MUSIC_FADE = 1;
+/** Motion blur: shutter open for this fraction of a frame at full strength, at most this many sub-frames. */
+const SHUTTER = 0.5;
+const MAX_SUBFRAMES = 8;
+/** Blur length in output pixels covered by each sub-frame. */
+const PX_PER_SUBFRAME = 3;
 
 const QUALITY: Record<ExportSettings["quality"], Quality> = { low: QUALITY_LOW, medium: QUALITY_MEDIUM, high: QUALITY_HIGH };
 const VIDEO_CODECS: Record<"mp4" | "webm", VideoCodec[]> = { mp4: ["avc", "hevc", "av1", "vp9"], webm: ["vp9", "vp8", "av1"] };
@@ -112,19 +106,65 @@ async function sourceAudio(input: Input): Promise<AudioBuffer | null> {
   return out;
 }
 
+/** Largest on-canvas displacement, in pixels, of a rectangle's corners. */
+function rectMotion(a: Rect, b: Rect): number {
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.x + a.w - b.x - b.w), Math.abs(a.y + a.h - b.y - b.h));
+}
+
+/**
+ * Pixel motion of the composition between output times t0 and t1: the zoom viewport (seen as the canvas
+ * corners moving), the screen frame and the camera rectangle.
+ */
+function motionPx(project: Project, W: number, H: number, src: FrameSources, t0: number, t1: number): number {
+  const dims = { W, H, screenW: src.screenW, screenH: src.screenH };
+  const v0 = viewAt(project, t0, dims), v1 = viewAt(project, t1, dims);
+  // Canvas point u lands at (u - view.x) / view.w once zoomed: compare both edges of each axis.
+  const edge = (u: number, o0: number, s0: number, o1: number, s1: number) => Math.abs((u - o0) / s0 - (u - o1) / s1);
+  const zoom = Math.max(
+    edge(0, v0.x, v0.w, v1.x, v1.w) * W, edge(1, v0.x, v0.w, v1.x, v1.w) * W,
+    edge(0, v0.y, v0.h, v1.y, v1.h) * H, edge(1, v0.y, v0.h, v1.y, v1.h) * H,
+  );
+  const frame = rectMotion(frameRect(project, W, H, src.screenW, src.screenH, t0), frameRect(project, W, H, src.screenW, src.screenH, t1)) / Math.min(v0.w, v0.h);
+  const cam = src.camera
+    ? rectMotion(cameraState(project, W, H, src.cameraW / src.cameraH, t0).rect, cameraState(project, W, H, src.cameraW / src.cameraH, t1).rect)
+    : 0;
+  return Math.max(zoom, frame, cam);
+}
+
+/** Number of motion blur sub-frames for a frame whose content moves `px` pixels during one frame. 1 means no blur. */
+function subframeCount(px: number, motionBlur: number): number {
+  return Math.min(MAX_SUBFRAMES, Math.max(1, Math.ceil((px * SHUTTER * motionBlur) / PX_PER_SUBFRAME)));
+}
+
+function subframeCanvas(width: number, height: number) {
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Cannot create a 2D canvas context");
+  return { canvas, ctx };
+}
+
 /** Mix the edited recording audio and the music into the output soundtrack, or null if there is nothing to hear. */
 async function renderAudio(screenAudio: AudioBuffer | null, project: Project): Promise<AudioBuffer | null> {
   if (!screenAudio && !project.music) return null;
   const duration = outputDuration(project.segments);
   const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: Math.ceil(duration * SAMPLE_RATE), sampleRate: SAMPLE_RATE });
-  if (screenAudio) {
-    const gain = new GainNode(ctx, { gain: project.muted ? 0 : project.volume });
-    gain.connect(ctx.destination);
+  if (screenAudio && !project.muted) {
+    const sr = screenAudio.sampleRate;
     const offsets = segmentOffsets(project.segments);
     project.segments.forEach((s, i) => {
-      const src = new AudioBufferSourceNode(ctx, { buffer: screenAudio, playbackRate: s.speed });
+      // The recording audio can end slightly before the video: only the part that exists is mixed.
+      const from = Math.round(s.start * sr), to = Math.min(Math.round(s.end * sr), screenAudio.length);
+      if (to <= from) return;
+      const raw = Array.from({ length: screenAudio.numberOfChannels }, (_, ch) => screenAudio.getChannelData(ch).subarray(from, to));
+      // Speed changes keep the pitch, like the editor preview (HTMLMediaElement.preservesPitch).
+      const data = s.speed === 1 ? raw : timeStretch(raw, s.speed, sr);
+      const buffer = new AudioBuffer({ length: data[0].length, numberOfChannels: data.length, sampleRate: sr });
+      data.forEach((c, ch) => buffer.copyToChannel(c, ch));
+      const gain = new GainNode(ctx, { gain: project.volume * s.volume });
+      gain.connect(ctx.destination);
+      const src = new AudioBufferSourceNode(ctx, { buffer });
       src.connect(gain);
-      src.start(offsets[i], s.start, s.end - s.start);
+      src.start(offsets[i]);
     });
   }
   if (project.music) {
@@ -160,6 +200,8 @@ export async function exportVideo(
   const canvas = new OffscreenCanvas(width, height);
   const ctx = canvas.getContext("2d", { willReadFrequently: settings.format === "gif" });
   if (!ctx) throw new Error("Cannot create a 2D canvas context");
+  // Motion blur sub-frames are rendered here, then blended into `canvas`.
+  const blur = project.motionBlur > 0 ? subframeCanvas(width, height) : null;
 
   const screenInput = new Input({ source: new BlobSource(rec.screen), formats: ALL_FORMATS });
   const cameraInput = rec.camera ? new Input({ source: new BlobSource(rec.camera), formats: ALL_FORMATS }) : null;
@@ -179,7 +221,7 @@ export async function exportVideo(
       const screen = (await screenFrames.next()).value;
       const camera = cameraFrames ? (await cameraFrames.next()).value : null;
       if (!screen || (cameraFrames && !camera)) throw new Error(`Ran out of source frames at output frame ${i}`);
-      renderFrame(ctx, width, height, project, {
+      const src: FrameSources = {
         screen: screen.toCanvasImageSource(),
         screenW: screen.displayWidth,
         screenH: screen.displayHeight,
@@ -187,7 +229,26 @@ export async function exportVideo(
         cameraW: camera ? camera.displayWidth : 0,
         cameraH: camera ? camera.displayHeight : 0,
         bgImage,
-      }, i / fps);
+      };
+      const t = i / fps;
+      const n = blur ? subframeCount(motionPx(project, width, height, src, t - 0.5 / fps, t + 0.5 / fps), project.motionBlur) : 1;
+      if (!blur || n === 1) renderFrame(ctx, width, height, project, src, t);
+      else {
+        // Sub-frames spread over the shutter, centered on t, all drawn from the same decoded frame:
+        // only the zoom and camera move. Each one is blended with weight 1/(j+1) so all end up equal.
+        const shutter = (SHUTTER * project.motionBlur) / fps;
+        for (let j = 0; j < n; j++) {
+          const tj = t + shutter * (j / (n - 1) - 0.5);
+          if (j === 0) {
+            renderFrame(ctx, width, height, project, src, tj);
+            continue;
+          }
+          renderFrame(blur.ctx, width, height, project, src, tj);
+          ctx.globalAlpha = 1 / (j + 1);
+          ctx.drawImage(blur.canvas, 0, 0);
+          ctx.globalAlpha = 1;
+        }
+      }
       screen.close();
       camera?.close();
       await emit(i);
@@ -197,11 +258,11 @@ export async function exportVideo(
   };
 
   if (settings.format === "gif") {
-    const gif = gifenc.GIFEncoder();
+    const gif = GIFEncoder();
     const done = await renderAll(async (i) => {
       const { data } = ctx.getImageData(0, 0, width, height);
-      const palette = gifenc.quantize(data, 256);
-      gif.writeFrame(gifenc.applyPalette(data, palette), width, height, { palette, delay: gifDelay(i, fps) });
+      const palette = quantize(data, 256);
+      gif.writeFrame(applyPalette(data, palette), width, height, { palette, delay: gifDelay(i, fps) });
     });
     await dispose();
     if (!done) throw aborted();

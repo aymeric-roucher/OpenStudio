@@ -20,6 +20,7 @@ export const DEFAULT_STYLE: Style = {
   captionStyle: { enabled: true, size: 0.045, y: 0.88 },
   zoomSpeed: "mellow",
   motionBlur: 0.5,
+  keepZoomedIn: false,
 };
 
 export function defaultProject(rec: Recording, style: Style): Project {
@@ -40,6 +41,6 @@ export function defaultProject(rec: Recording, style: Style): Project {
 }
 
 export function styleOf(p: Project): Style {
-  const { aspect, background, padding, radius, shadow, inset, camera, captionStyle, zoomSpeed, motionBlur } = p;
-  return structuredClone({ aspect, background, padding, radius, shadow, inset, camera, captionStyle, zoomSpeed, motionBlur });
+  const { aspect, background, padding, radius, shadow, inset, camera, captionStyle, zoomSpeed, motionBlur, keepZoomedIn } = p;
+  return structuredClone({ aspect, background, padding, radius, shadow, inset, camera, captionStyle, zoomSpeed, motionBlur, keepZoomedIn });
 }
