@@ -45,7 +45,7 @@ const Waveform = memo(function Waveform(props: { peaks: Float32Array; rate: numb
     Object.assign(c, { width: w * 2, height: h * 2 });
     const ctx = c.getContext("2d")!;
     ctx.scale(2, 2);
-    ctx.fillStyle = "rgba(60, 30, 0, 0.9)";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
     const { peaks, rate, seg } = props;
     for (let x = 0; x < w; x += 2) {
       const i = Math.floor((seg.start + (x / w) * (seg.end - seg.start)) * rate);

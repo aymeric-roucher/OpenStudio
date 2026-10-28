@@ -7,8 +7,8 @@ export const DEFAULT_STYLE: Style = {
   customSize: { w: 1080, h: 1350 },
   background: {
     kind: "wallpaper",
-    wallpaper: 2,
-    gradient: { from: "#2f7cf6", to: "#22d3ee", angle: 135 },
+    wallpaper: 1,
+    gradient: { from: "#ff773c", to: "#ffb36b", angle: 135 },
     color: "#1b1b22",
     image: null,
     blur: 0,
