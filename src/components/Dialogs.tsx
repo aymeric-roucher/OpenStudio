@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Download, Search } from "lucide-react";
 import { exportPlan, exportVideo, type ExportSettings } from "../lib/exporter";
 import { download } from "../lib/media";
-import type { Rect } from "../lib/types";
+import { cameraCropRect } from "../lib/render";
+import type { CameraCrop, Rect } from "../lib/types";
 import type { EditorApi } from "./Editor";
 import { Field, Modal, Segmented, formatTime } from "./ui";
 
@@ -240,6 +241,85 @@ export function ExportDialog(props: { api: EditorApi; bgImage: CanvasImageSource
           )}
         </>
       )}
+    </Modal>
+  );
+}
+
+const CAMERA_RATIOS: [number | null, string][] = [[null, "Original"], [1, "1:1"], [4 / 3, "4:3"], [3 / 4, "3:4"], [16 / 9, "16:9"], [9 / 16, "9:16"]];
+
+/** Choose the camera bubble's aspect ratio and framing. Shown mirrored like the bubble, so framing matches what viewers see. */
+export function CameraCropModal(props: { api: EditorApi; onClose: () => void }) {
+  const { api } = props;
+  const v = api.player.camera!;
+  const mirror = api.p.camera.mirror;
+  const [crop, setCrop] = useState<CameraCrop>(api.p.camera.crop);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const camAspect = v.videoWidth / v.videoHeight;
+  const W = Math.min(window.innerWidth * 0.7, 900, window.innerHeight * 0.6 * camAspect);
+  const H = W / camAspect;
+  const r = cameraCropRect(crop, camAspect);
+  const flip = mirror ? -1 : 1;
+
+  useEffect(() => {
+    const c = canvasRef.current!;
+    Object.assign(c, { width: v.videoWidth, height: v.videoHeight });
+    const ctx = c.getContext("2d")!;
+    if (mirror) ctx.setTransform(-1, 0, 0, 1, v.videoWidth, 0);
+    ctx.drawImage(v, 0, 0);
+  }, [v, mirror]);
+
+  const drag = (e: React.PointerEvent, mode: "move" | "resize") => {
+    e.stopPropagation();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    const x0 = e.clientX, y0 = e.clientY, c0 = crop, r0 = r;
+    const fullW = cameraCropRect({ ...crop, zoom: 1 }, camAspect).w;
+    const move = (ev: PointerEvent) => {
+      const dx = ((ev.clientX - x0) / W) * flip, dy = (ev.clientY - y0) / H;
+      if (mode === "move") {
+        // Keep the requested center reachable so dragging back has no dead zone.
+        const x = Math.min(Math.max(r0.x + r0.w / 2 + dx, r0.w / 2), 1 - r0.w / 2);
+        const y = Math.min(Math.max(r0.y + r0.h / 2 + dy, r0.h / 2), 1 - r0.h / 2);
+        setCrop({ ...c0, x, y });
+      } else {
+        // Resize around the center: the box grows by the drag on both sides.
+        const w = r0.w + 2 * ((ev.clientX - x0) / W);
+        setCrop({ ...c0, zoom: Math.min(Math.max(fullW / w, 1), 4) });
+      }
+    };
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+  };
+
+  const left = mirror ? 1 - r.x - r.w : r.x;
+  return (
+    <Modal onClose={props.onClose}>
+      <h2>Crop camera</h2>
+      <p className="muted" style={{ marginTop: -8 }}>The ratio sets the bubble's shape. Drag the box to frame yourself, drag its corner to zoom.</p>
+      <div style={{ position: "relative", width: W, height: H, borderRadius: 8, overflow: "hidden", background: "#000" }}>
+        <canvas ref={canvasRef} style={{ width: W, height: H, display: "block" }} />
+        <div
+          style={{ position: "absolute", left: left * W, top: r.y * H, width: r.w * W, height: r.h * H, border: "2px solid #fff", boxShadow: "0 0 0 9999px rgba(0,0,0,0.6)", cursor: "move", borderRadius: `${(api.p.camera.roundness * Math.min(r.w * W, r.h * H)) / 2}px` }}
+          onPointerDown={(e) => drag(e, "move")}
+        >
+          <div className="handle" style={{ right: -7, bottom: -7, cursor: "nwse-resize" }} onPointerDown={(e) => drag(e, "resize")} />
+        </div>
+      </div>
+      <div className="row" style={{ marginTop: 16 }}>
+        <div className="seg">
+          {CAMERA_RATIOS.map(([aspect, label]) => (
+            <button key={label} className={crop.aspect === aspect ? "on" : ""} onClick={() => setCrop({ ...crop, aspect })}>{label}</button>
+          ))}
+        </div>
+        <div className="grow" />
+        <button className="btn ghost" onClick={() => setCrop({ ...crop, zoom: 1, x: 0.5, y: 0.5 })}>Reset framing</button>
+        <button className="btn" onClick={props.onClose}>Cancel</button>
+        <button className="btn primary" onClick={() => { api.update((p) => ({ ...p, camera: { ...p.camera, crop } })); props.onClose(); }}>Apply</button>
+      </div>
     </Modal>
   );
 }

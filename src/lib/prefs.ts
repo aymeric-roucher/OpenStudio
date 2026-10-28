@@ -1,4 +1,4 @@
-import { DEFAULT_STYLE } from "./defaults";
+import { DEFAULT_STYLE, normalizeStyle } from "./defaults";
 import type { SurfaceKind } from "./recorder";
 import type { Style } from "./types";
 
@@ -35,7 +35,12 @@ export function loadPrefs(): Prefs {
   const raw = localStorage.getItem(KEY);
   if (!raw) return structuredClone(DEFAULT_PREFS);
   const stored = JSON.parse(raw) as Partial<Prefs>;
-  return { ...structuredClone(DEFAULT_PREFS), ...stored, lastStyle: { ...DEFAULT_STYLE, ...stored.lastStyle } };
+  return {
+    ...structuredClone(DEFAULT_PREFS),
+    ...stored,
+    lastStyle: normalizeStyle(stored.lastStyle ?? {}),
+    presets: (stored.presets ?? []).map((p) => ({ name: p.name, style: normalizeStyle(p.style) })),
+  };
 }
 
 export function savePrefs(patch: Partial<Prefs>): Prefs {

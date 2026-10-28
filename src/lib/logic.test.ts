@@ -7,7 +7,9 @@ import { fitFrame, outputSize } from "./layout";
 import { exportPlan, gifDelay } from "./exporter";
 import { groupWords } from "./transcribe";
 import { timeStretch } from "./timestretch";
-import type { Segment, ZoomRegion } from "./types";
+import type { CameraCorner, CameraSettings, Project, Segment, ZoomRegion } from "./types";
+import { DEFAULT_STYLE, normalizeStyle } from "./defaults";
+import { cameraCropRect, cameraState } from "./render";
 
 const segs: Segment[] = [
   { id: "a", start: 0, end: 4, speed: 1, volume: 1 },
@@ -136,6 +138,54 @@ describe("layout", () => {
     expect(r.h).toBeCloseTo(450);
     expect(r.x).toBeCloseTo(100);
     expect(r.y).toBeCloseTo(275);
+  });
+});
+
+describe("camera", () => {
+  const square = { aspect: 1, zoom: 1, x: 0.5, y: 0.5 };
+  const project = (corner: CameraCorner): Project => ({
+    ...DEFAULT_STYLE,
+    camera: { ...DEFAULT_STYLE.camera, corner, margin: 0.05, crop: square },
+    name: "t", segments: segs, zooms: [], masks: [], cameraLayouts: [], captions: [], crop: { x: 0, y: 0, w: 1, h: 1 },
+    volume: 1, muted: false, music: null, cursor: [],
+  });
+  it.each([
+    ["bottom-right", 1920, 1080],
+    ["bottom-left", 1920, 1080],
+    ["top-right", 1080, 1920],
+    ["top-left", 1080, 1080],
+  ] as const)("%s bubble keeps the same gap to both edges on %i x %i", (corner, W, H) => {
+    const r = cameraState(project(corner), W, H, 16 / 9, 0).rect;
+    const gap = 0.05 * Math.min(W, H);
+    const gx = corner.endsWith("right") ? W - (r.x + r.w) : r.x;
+    const gy = corner.startsWith("bottom") ? H - (r.y + r.h) : r.y;
+    expect(gx).toBeCloseTo(gap);
+    expect(gy).toBeCloseTo(gap);
+    expect(r.w).toBeCloseTo(r.h);
+  });
+
+  it.each([
+    ["square crop of a 16:9 camera", square, { x: 0.21875, y: 0, w: 0.5625, h: 1 }],
+    ["original ratio keeps the whole frame", { aspect: null, zoom: 1, x: 0.5, y: 0.5 }, { x: 0, y: 0, w: 1, h: 1 }],
+    ["zoomed crop is clamped inside the frame", { aspect: 1, zoom: 2, x: 0, y: 0.5 }, { x: 0, y: 0.25, w: 0.28125, h: 0.5 }],
+  ] as const)("camera crop: %s", (_name, crop, expected) => {
+    const r = cameraCropRect(crop, 16 / 9);
+    expect(r.x).toBeCloseTo(expected.x);
+    expect(r.y).toBeCloseTo(expected.y);
+    expect(r.w).toBeCloseTo(expected.w);
+    expect(r.h).toBeCloseTo(expected.h);
+  });
+
+  it.each([
+    ["old rounded bubble at bottom left", { x: 0.12, y: 0.8, shape: "rounded" }, { corner: "bottom-left", aspect: 1, roundness: 0.44 }],
+    ["old rectangle at top right", { x: 0.9, y: 0.1, shape: "square" }, { corner: "top-right", aspect: null, roundness: 0.12 }],
+    ["old circle", { x: 0.9, y: 0.9, shape: "circle" }, { corner: "bottom-right", aspect: 1, roundness: 1 }],
+    ["missing camera gets the default", undefined, { corner: "bottom-right", aspect: 1, roundness: DEFAULT_STYLE.camera.roundness }],
+  ] as const)("stored looks are upgraded: %s", (_name, camera, expected) => {
+    const style = normalizeStyle({ padding: 0.1, ...(camera ? { camera: camera as unknown as CameraSettings } : {}) });
+    expect(style.padding).toBe(0.1);
+    expect(style.zoomSpeed).toBe(DEFAULT_STYLE.zoomSpeed);
+    expect({ corner: style.camera.corner, aspect: style.camera.crop.aspect, roundness: style.camera.roundness }).toEqual(expected);
   });
 });
 

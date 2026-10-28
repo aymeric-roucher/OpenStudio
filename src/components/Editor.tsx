@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Captions, ChevronDown, Clipboard, Command, Crop, Download, FilePlus2, LayoutTemplate, Music, Palette, Redo2, Sparkles, Undo2, Upload, Video, WandSparkles,
 } from "lucide-react";
-import { defaultProject, styleOf, uid } from "../lib/defaults";
+import { defaultProject, nearestCorner, styleOf, uid } from "../lib/defaults";
 import { useHistory } from "../lib/history";
 import { ASPECTS, outputSize } from "../lib/layout";
 import { download } from "../lib/media";
@@ -14,7 +14,7 @@ import type { Aspect, MaskRegion, Project, Recording, Rect, Style } from "../lib
 import { Dropdown } from "./ui";
 import Timeline from "./Timeline";
 import Inspector, { type Tab } from "./Inspector";
-import { CommandMenu, CropModal, ExportDialog, type Action } from "./Dialogs";
+import { CameraCropModal, CommandMenu, CropModal, ExportDialog, type Action } from "./Dialogs";
 
 export type Selection = { kind: "segment" | "zoom" | "mask" | "layout" | "caption"; id: string } | null;
 
@@ -27,6 +27,7 @@ export type EditorApi = {
   sel: Selection;
   setSel: (s: Selection) => void;
   notify: (msg: string) => void;
+  openCameraCrop: () => void;
   /** Render the current frame into a canvas of the given long side, optionally overriding the project. */
   snapshot: (long: number, override?: Partial<Project>) => HTMLCanvasElement;
 };
@@ -58,7 +59,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
   const [playing, setPlaying] = useState(false);
   const [sel, setSel] = useState<Selection>(null);
   const [tab, setTab] = useState<Tab>("background");
-  const [modal, setModal] = useState<"crop" | "export" | "command" | null>(props.cropOnOpen ? "crop" : null);
+  const [modal, setModal] = useState<"crop" | "camera-crop" | "export" | "command" | null>(props.cropOnOpen ? "crop" : null);
   const [quality, setQuality] = useState<1 | 0.5>(1);
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -158,7 +159,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
   );
 
   const duration = outputDuration(p.segments);
-  const api: EditorApi = { p, rec, update: h.update, player, time, sel, setSel, notify: setNotice, snapshot };
+  const api: EditorApi = { p, rec, update: h.update, player, time, sel, setSel, notify: setNotice, snapshot, openCameraCrop: () => setModal("camera-crop") };
 
   // ---------- actions ----------
 
@@ -313,8 +314,8 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
       const cs = cameraState(p, ow, oh, player.camera.videoWidth / player.camera.videoHeight, time);
       const px = pt.x * ow, py = pt.y * oh;
       if (cs.alpha > 0.5 && px >= cs.rect.x && px <= cs.rect.x + cs.rect.w && py >= cs.rect.y && py <= cs.rect.y + cs.rect.h) {
-        const dx = pt.x - p.camera.x, dy = pt.y - p.camera.y;
-        return drag((q) => h.update((x) => ({ ...x, camera: { ...x.camera, x: Math.min(Math.max(q.x - dx, 0), 1), y: Math.min(Math.max(q.y - dy, 0), 1) } }), "camera-drag"));
+        // The bubble snaps to the corner nearest to the pointer, keeping equal gaps to both edges.
+        return drag((q) => h.update((x) => ({ ...x, camera: { ...x.camera, corner: nearestCorner(q.x, q.y) } }), "camera-drag"));
       }
     }
   };
@@ -448,6 +449,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
       <Timeline api={api} playing={playing} duration={duration} onTogglePlay={togglePlay} onSplit={split} onAdd={addRegion} />
 
       {modal === "crop" && <CropModal api={api} onClose={() => setModal(null)} />}
+      {modal === "camera-crop" && <CameraCropModal api={api} onClose={() => setModal(null)} />}
       {modal === "export" && <ExportDialog api={api} bgImage={bgImage} onClose={() => setModal(null)} />}
       {modal === "command" && <CommandMenu actions={actions} onClose={() => setModal(null)} />}
       {notice && <div className="toast">{notice}</div>}

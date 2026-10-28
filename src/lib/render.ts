@@ -1,6 +1,6 @@
 import { fitFrame } from "./layout";
 import { outputToSource, regionsToOutput } from "./timeline";
-import type { CameraLayout, Project, Rect } from "./types";
+import type { CameraCrop, CameraLayout, Project, Rect } from "./types";
 import { drawWallpaper, WALLPAPERS } from "./wallpapers";
 import { ZOOM_TRANSITION, zoomViewport } from "./zoom";
 import { cursorAt } from "./cursor";
@@ -173,41 +173,62 @@ function layoutAt(p: Project, t: number): { layout: CameraLayout | null; progres
   return { layout: r.layout, progress: ease(clamp01(Math.min(t - r.start, r.end - t) / tr)) };
 }
 
-export type CamState = { rect: Rect; radius: number; alpha: number };
+/** Bubble rectangle on the canvas, its corner radius and opacity, and the part of the camera image shown (normalized). */
+export type CamState = { rect: Rect; radius: number; alpha: number; src: Rect };
+
+const FULL_FRAME: Rect = { x: 0, y: 0, w: 1, h: 1 };
+
+/** Normalized area of the camera frame shown in the bubble. `camAspect` is the camera's width / height. */
+export function cameraCropRect(crop: CameraCrop, camAspect: number): Rect {
+  const a = crop.aspect ?? camAspect;
+  const w = (a >= camAspect ? 1 : a / camAspect) / crop.zoom;
+  const h = (a >= camAspect ? camAspect / a : 1) / crop.zoom;
+  return {
+    x: Math.min(Math.max(crop.x - w / 2, 0), 1 - w),
+    y: Math.min(Math.max(crop.y - h / 2, 0), 1 - h),
+    w,
+    h,
+  };
+}
 
 function bubbleState(p: Project, W: number, H: number, zoomW: number, camAspect: number): CamState {
   const c = p.camera;
   const m = Math.min(W, H);
   const shrink = c.shrinkOnZoom ? 0.65 + 0.35 * zoomW : 1;
   const h = c.size * m * shrink;
-  const w = c.shape === "square" ? h * camAspect : h;
-  const cx = Math.min(Math.max(c.x * W, w / 2), W - w / 2);
-  const cy = Math.min(Math.max(c.y * H, h / 2), H - h / 2);
-  const radius = c.shape === "circle" ? h / 2 : c.shape === "rounded" ? h * 0.22 : h * 0.06;
-  return { rect: { x: cx - w / 2, y: cy - h / 2, w, h }, radius, alpha: c.visible ? 1 : 0 };
+  const w = h * (c.crop.aspect ?? camAspect);
+  // Same gap to both edges of the corner; when shrinking for a zoom, the bubble stays tucked in its corner.
+  const gap = c.margin * m;
+  const x = c.corner.endsWith("right") ? W - gap - w : gap;
+  const y = c.corner.startsWith("bottom") ? H - gap - h : gap;
+  const radius = c.roundness * (Math.min(w, h) / 2);
+  return { rect: { x, y, w, h }, radius, alpha: c.visible ? 1 : 0, src: cameraCropRect(c.crop, camAspect) };
 }
 
 function layoutState(layout: CameraLayout, bubble: CamState, W: number, H: number, pad: number): CamState {
   if (layout === "hidden") {
     const r = bubble.rect;
-    return { rect: { x: r.x + r.w * 0.1, y: r.y + r.h * 0.1, w: r.w * 0.8, h: r.h * 0.8 }, radius: bubble.radius, alpha: 0 };
+    return { rect: { x: r.x + r.w * 0.1, y: r.y + r.h * 0.1, w: r.w * 0.8, h: r.h * 0.8 }, radius: bubble.radius, alpha: 0, src: bubble.src };
   }
-  if (layout === "fullscreen") return { rect: { x: 0, y: 0, w: W, h: H }, radius: 0, alpha: 1 };
+  // Large layouts show the whole camera image (cover-fitted), not the bubble's crop.
+  if (layout === "fullscreen") return { rect: { x: 0, y: 0, w: W, h: H }, radius: 0, alpha: 1, src: FULL_FRAME };
   const radius = Math.min(W, H) * 0.03;
   // Side by side on landscape canvases, stacked on portrait ones.
-  if (W >= H) return { rect: { x: W * (1 - SIDE_SHARE), y: pad, w: W * SIDE_SHARE - pad, h: H - 2 * pad }, radius, alpha: 1 };
-  return { rect: { x: pad, y: H * (1 - SIDE_SHARE), w: W - 2 * pad, h: H * SIDE_SHARE - pad }, radius, alpha: 1 };
+  if (W >= H) return { rect: { x: W * (1 - SIDE_SHARE), y: pad, w: W * SIDE_SHARE - pad, h: H - 2 * pad }, radius, alpha: 1, src: FULL_FRAME };
+  return { rect: { x: pad, y: H * (1 - SIDE_SHARE), w: W - 2 * pad, h: H * SIDE_SHARE - pad }, radius, alpha: 1, src: FULL_FRAME };
 }
 
-function drawCover(ctx: Ctx2D, img: CanvasImageSource, iw: number, ih: number, r: Rect, mirror: boolean) {
-  const s = Math.max(r.w / iw, r.h / ih);
+/** Draw the normalized `src` area of an image so it covers rect `r`, centered, optionally mirrored. */
+function drawCover(ctx: Ctx2D, img: CanvasImageSource, iw: number, ih: number, src: Rect, r: Rect, mirror: boolean) {
+  const aw = src.w * iw, ah = src.h * ih;
+  const s = Math.max(r.w / aw, r.h / ah);
   const sw = r.w / s, sh = r.h / s;
   ctx.save();
   if (mirror) {
     ctx.translate(r.x * 2 + r.w, 0);
     ctx.scale(-1, 1);
   }
-  ctx.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, r.x, r.y, r.w, r.h);
+  ctx.drawImage(img, src.x * iw + (aw - sw) / 2, src.y * ih + (ah - sh) / 2, sw, sh, r.x, r.y, r.w, r.h);
   ctx.restore();
 }
 
@@ -313,6 +334,7 @@ export function cameraState(project: Project, W: number, H: number, camAspect: n
     rect: lerpRect(bubble.rect, target.rect, progress),
     radius: lerp(bubble.radius, target.radius, progress),
     alpha: lerp(bubble.alpha, target.alpha, progress),
+    src: lerpRect(bubble.src, target.src, progress),
   };
 }
 
@@ -364,7 +386,7 @@ export function renderFrame(ctx: Ctx2D, W: number, H: number, project: Project, 
       ctx.save();
       roundRect(ctx, s.rect, s.radius);
       ctx.clip();
-      drawCover(ctx, src.camera, src.cameraW, src.cameraH, s.rect, p.camera.mirror);
+      drawCover(ctx, src.camera, src.cameraW, src.cameraH, s.src, s.rect, p.camera.mirror);
       ctx.restore();
       if (p.camera.border > 0) {
         ctx.lineWidth = (p.camera.border * W) / 1920;

@@ -4,6 +4,8 @@ import { AppWindow, Crop, FileVideo, Monitor, PanelTop, Video } from "lucide-rea
 import { adoptStyles, Field, Segmented, Slider, Toggle } from "./ui";
 import { cameraStream, captureDisplay, micStream, type Captured, type SurfaceKind } from "../lib/recorder";
 import { loadPrefs, savePrefs, type Prefs } from "../lib/prefs";
+import { CAMERA_PRESETS, nearestCorner } from "../lib/defaults";
+import { cameraCropRect } from "../lib/render";
 import { WALLPAPERS, wallpaperCss } from "../lib/wallpapers";
 import type { CameraSettings } from "../lib/types";
 
@@ -58,6 +60,7 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [perm, setPerm] = useState<Perm | null>(null);
   const [camStream, setCamStream] = useState<MediaStream | null>(null);
+  const [camAspect, setCamAspect] = useState(16 / 9);
   const [micLevel, setMicLevel] = useState(0);
   const [dragging, setDragging] = useState(false);
   const micRef = useRef<MediaStream | null>(null);
@@ -207,9 +210,8 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
     const stage = stageRef.current!.getBoundingClientRect();
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
-    const move = (ev: PointerEvent) => {
-      setCam({ x: Math.min(Math.max((ev.clientX - stage.left) / stage.width, 0), 1), y: Math.min(Math.max((ev.clientY - stage.top) / stage.height, 0), 1) });
-    };
+    // Snap to the corner nearest to the pointer, like in the editor.
+    const move = (ev: PointerEvent) => setCam({ corner: nearestCorner((ev.clientX - stage.left) / stage.width, (ev.clientY - stage.top) / stage.height) });
     const up = () => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
@@ -222,11 +224,18 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
   const mics = devices.filter((d) => d.kind === "audioinput");
   const stageH = stage.h;
   const stageW = stage.w;
-  const bubbleH = cam.size * stageH;
-  const bubbleW = cam.shape === "square" ? bubbleH * (16 / 9) * 0.75 : bubbleH;
-  const radius = cam.shape === "circle" ? "50%" : cam.shape === "rounded" ? `${bubbleH * 0.22}px` : `${bubbleH * 0.06}px`;
-  const left = Math.min(Math.max(cam.x * stageW - bubbleW / 2, 0), stageW - bubbleW);
-  const top = Math.min(Math.max(cam.y * stageH - bubbleH / 2, 0), stageH - bubbleH);
+  // Same geometry as the editor's compositor: anchored to a corner with equal gaps, crop sets the ratio.
+  const m = Math.min(stageW, stageH);
+  const bubbleH = cam.size * m;
+  const bubbleW = bubbleH * (cam.crop.aspect ?? camAspect);
+  const gap = cam.margin * m;
+  const left = cam.corner.endsWith("right") ? stageW - gap - bubbleW : gap;
+  const top = cam.corner.startsWith("bottom") ? stageH - gap - bubbleH : gap;
+  const radius = `${(cam.roundness * Math.min(bubbleW, bubbleH)) / 2}px`;
+  const crop = cameraCropRect(cam.crop, camAspect);
+  const activePreset = (Object.keys(CAMERA_PRESETS) as (keyof typeof CAMERA_PRESETS)[]).find(
+    (k) => CAMERA_PRESETS[k].crop.aspect === cam.crop.aspect && Math.abs(CAMERA_PRESETS[k].roundness - cam.roundness) < 0.01,
+  );
   const bg = prefs.lastStyle.background;
 
   return (
@@ -258,7 +267,16 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
             </div>
             {camStream && cam.visible && (
               <div className="stage-cam" onPointerDown={onCamDown} style={{ left, top, width: bubbleW, height: bubbleH, borderRadius: radius }} title="Drag to position your camera">
-                <video ref={videoRef} autoPlay muted playsInline style={{ transform: cam.mirror ? "scaleX(-1)" : undefined }} />
+                <div style={{ position: "absolute", inset: 0, transform: cam.mirror ? "scaleX(-1)" : undefined }}>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    onLoadedMetadata={(e) => setCamAspect(e.currentTarget.videoWidth / e.currentTarget.videoHeight)}
+                    style={{ position: "absolute", objectFit: "fill", width: bubbleW / crop.w, height: bubbleH / crop.h, left: (-crop.x * bubbleW) / crop.w, top: (-crop.y * bubbleH) / crop.h }}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -291,8 +309,12 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
         </Field>
         {prefs.cameraId && (
           <>
-            <Field label="Camera shape">
-              <Segmented value={cam.shape} onChange={(shape) => setCam({ shape })} options={[{ value: "circle", label: "Circle" }, { value: "rounded", label: "Rounded" }, { value: "square", label: "Rectangle" }]} />
+            <Field label="Camera shape" extra={<span className="dim">fine-tune later in the editor</span>}>
+              <div className="seg">
+                {([["circle", "Circle"], ["rounded", "Rounded"], ["rectangle", "Rectangle"]] as const).map(([k, label]) => (
+                  <button key={k} className={activePreset === k ? "on" : ""} onClick={() => setCam({ ...structuredClone(CAMERA_PRESETS[k]), crop: { ...cam.crop, aspect: CAMERA_PRESETS[k].crop.aspect } })}>{label}</button>
+                ))}
+              </div>
             </Field>
             <Field label="Camera size">
               <Slider value={cam.size} min={0.12} max={0.6} onChange={(size) => setCam({ size })} format={(v) => `${Math.round(v * 100)}%`} />

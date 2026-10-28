@@ -59,16 +59,26 @@ export type Background = {
   blur: number;
 };
 
-export type CameraShape = "circle" | "rounded" | "square";
+/**
+ * Part of the camera image shown in the bubble: the largest area with `aspect` (width / height, null = the
+ * camera's own ratio) that fits the frame, shrunk by `zoom` and centered on (x, y), normalized to the camera frame.
+ */
+export type CameraCrop = { aspect: number | null; zoom: number; x: number; y: number };
+
+export type CameraCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export type CameraSettings = {
   visible: boolean;
-  /** Center of the bubble, normalized to the output canvas. */
-  x: number;
-  y: number;
+  /** Corner the bubble is anchored to. */
+  corner: CameraCorner;
+  /** Gap between the bubble and both canvas edges, as a fraction of the canvas short side. */
+  margin: number;
   /** Bubble height as a fraction of the output canvas short side. */
   size: number;
-  shape: CameraShape;
+  /** Sets the bubble's aspect ratio and framing. */
+  crop: CameraCrop;
+  /** Corner radius, 0 (sharp) to 1 (fully round: a circle when the crop is square). */
+  roundness: number;
   mirror: boolean;
   shadow: number;
   border: number;

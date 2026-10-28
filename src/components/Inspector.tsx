@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownLeft, ArrowDownRight, ArrowUpLeft, ArrowUpRight, Dices, Download, ImagePlus, Trash2, Upload, Wand2 } from "lucide-react";
-import { DEFAULT_STYLE, styleOf, uid } from "../lib/defaults";
+import { ArrowDownLeft, ArrowDownRight, ArrowUpLeft, ArrowUpRight, Crop, Dices, Download, ImagePlus, Trash2, Upload, Wand2 } from "lucide-react";
+import { CAMERA_PRESETS, DEFAULT_STYLE, normalizeStyle, styleOf, uid } from "../lib/defaults";
 import { loadPrefs, savePrefs, type Prefs } from "../lib/prefs";
 import { sourceRangeToOutput, speedUpRanges } from "../lib/timeline";
 import { WALLPAPERS, wallpaperCss } from "../lib/wallpapers";
@@ -11,7 +11,7 @@ import { outputSize } from "../lib/layout";
 import { frameRect } from "../lib/render";
 import { download } from "../lib/media";
 import { toSubtitles } from "../lib/subtitles";
-import type { Background, CameraSettings, Project, Style, ZoomRegion } from "../lib/types";
+import type { Background, CameraCorner, CameraSettings, Project, Style, ZoomRegion } from "../lib/types";
 import type { EditorApi } from "./Editor";
 import { Field, Segmented, Slider, Toggle } from "./ui";
 
@@ -255,28 +255,55 @@ function BackgroundPanel({ api }: { api: EditorApi }) {
   );
 }
 
+const CORNERS: [CameraCorner, typeof ArrowUpLeft, string][] = [
+  ["top-left", ArrowUpLeft, "Top left"], ["top-right", ArrowUpRight, "Top right"],
+  ["bottom-left", ArrowDownLeft, "Bottom left"], ["bottom-right", ArrowDownRight, "Bottom right"],
+];
+
+/** Ratio label for a camera crop, e.g. "1:1" or "Original". */
+export function cropLabel(aspect: number | null): string {
+  if (aspect === null) return "Original";
+  const known: [number, string][] = [[1, "1:1"], [4 / 3, "4:3"], [3 / 4, "3:4"], [16 / 9, "16:9"], [9 / 16, "9:16"]];
+  return known.find(([v]) => Math.abs(v - aspect) < 0.01)?.[1] ?? aspect.toFixed(2);
+}
+
 function CameraPanel({ api }: { api: EditorApi }) {
   const { p, rec, update } = api;
   if (!rec.camera) return (<><h3>Camera</h3><p className="muted">This recording has no camera track. Pick a camera before recording to get a movable camera bubble.</p></>);
   const c = p.camera;
   const set = (patch: Partial<CameraSettings>, key = "cam") => update((x) => ({ ...x, camera: { ...x.camera, ...patch } }), key);
-  const corners: [number, number, typeof ArrowUpLeft, string][] = [[0.12, 0.2, ArrowUpLeft, "Top left"], [0.88, 0.2, ArrowUpRight, "Top right"], [0.12, 0.8, ArrowDownLeft, "Bottom left"], [0.88, 0.8, ArrowDownRight, "Bottom right"]];
+  const active = (Object.keys(CAMERA_PRESETS) as (keyof typeof CAMERA_PRESETS)[]).find(
+    (k) => CAMERA_PRESETS[k].crop.aspect === c.crop.aspect && Math.abs(CAMERA_PRESETS[k].roundness - c.roundness) < 0.01,
+  );
   return (
     <>
       <h3>Camera</h3>
       <Toggle label="Show camera" value={c.visible} onChange={(visible) => set({ visible })} />
-      <Field label="Shape">
-        <Segmented value={c.shape} onChange={(shape) => set({ shape })} options={[{ value: "circle", label: "Circle" }, { value: "rounded", label: "Rounded" }, { value: "square", label: "Rectangle" }]} />
+      <Field label="Shape presets">
+        <div className="seg">
+          {([["circle", "Circle"], ["rounded", "Rounded"], ["rectangle", "Rectangle"]] as const).map(([k, label]) => (
+            <button key={k} className={active === k ? "on" : ""} onClick={() => set({ ...structuredClone(CAMERA_PRESETS[k]), crop: { ...c.crop, aspect: CAMERA_PRESETS[k].crop.aspect } })}>{label}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Roundness">
+        <Slider value={c.roundness} min={0} max={1} onChange={(roundness) => set({ roundness }, "cam-roundness")} format={pct} />
+      </Field>
+      <Field label="Crop" extra={<span className="dim">{cropLabel(c.crop.aspect)}{c.crop.zoom > 1.01 ? `, ${c.crop.zoom.toFixed(1)}x` : ""}</span>}>
+        <button className="btn block" onClick={api.openCameraCrop}><Crop size={15} /> Crop camera</button>
       </Field>
       <Field label="Size">
         <Slider value={c.size} min={0.1} max={0.7} onChange={(size) => set({ size }, "cam-size")} format={pct} />
       </Field>
       <Field label="Position" extra={<span className="dim">or drag it on the preview</span>}>
         <div className="row">
-          {corners.map(([x, y, Icon, label]) => (
-            <button key={label} className="btn" title={label} onClick={() => set({ x, y })}><Icon size={15} /></button>
+          {CORNERS.map(([corner, Icon, label]) => (
+            <button key={corner} className={`btn ${c.corner === corner ? "primary" : ""}`} title={label} onClick={() => set({ corner })}><Icon size={15} /></button>
           ))}
         </div>
+      </Field>
+      <Field label="Distance from edges">
+        <Slider value={c.margin} min={0} max={0.15} step={0.002} onChange={(margin) => set({ margin }, "cam-margin")} format={(v) => pct(v / 0.15)} />
       </Field>
       <Toggle label="Mirror" value={c.mirror} onChange={(mirror) => set({ mirror })} />
       <Toggle label="Shrink while zoomed in" value={c.shrinkOnZoom} onChange={(shrinkOnZoom) => set({ shrinkOnZoom })} />
@@ -511,7 +538,7 @@ function PresetsPanel({ api }: { api: EditorApi }) {
           const incoming = JSON.parse(await f.text()) as Prefs["presets"];
           if (!Array.isArray(incoming) || incoming.some((x) => typeof x.name !== "string" || typeof x.style !== "object")) throw new Error("This file is not an OpenStudio presets file");
           const names = new Set(incoming.map((x) => x.name));
-          save({ presets: [...prefs.presets.filter((x) => !names.has(x.name)), ...incoming] });
+          save({ presets: [...prefs.presets.filter((x) => !names.has(x.name)), ...incoming.map((x) => ({ name: x.name, style: normalizeStyle(x.style) }))] });
         }} />
       </div>
       <div className="divider" />

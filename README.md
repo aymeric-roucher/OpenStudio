@@ -32,7 +32,7 @@ Best in a recent Chromium browser (Chrome, Edge, Arc, Brave). Firefox and Safari
 - Dynamic camera layouts (L): fullscreen camera, side by side (stacked on vertical canvases), or hidden for a section, with animated transitions. The bubble can shrink while zoomed in.
 - Aspect ratios: 16:9, 9:16, 1:1, 4:3, 3:4, or matching the recording. Crop the recording.
 - Background: 16 procedural wallpapers, gradients, solid colors, or your own image, with blur. Frame padding, roundness, shadow and inset border.
-- Camera: shape, size, position, mirror, shadow, border.
+- Camera: anchored to a corner with an adjustable, equal distance from both edges (drag to snap to another corner). Crop sets the bubble ratio and framing, a roundness slider sets the corners, and Circle, Rounded and Rectangle are presets for both. Size, mirror, shadow, border.
 - Captions generated on your device with Whisper (transformers.js, WebGPU when available), editable, with size and position.
 - Audio: recording volume up to 200%, mute, background music with volume and fades.
 - Smart edits: finds the mouse pointer in the recorded pixels, infers clicks, and adds zooms on clicks that follow the cursor. Also suggests zooms where the screen changes, and speeds up idle or typing sections.
