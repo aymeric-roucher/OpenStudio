@@ -4,7 +4,7 @@ import { FileVideo, Monitor, Video } from "lucide-react";
 import { adoptStyles, Field, Segmented, Slider, Toggle } from "./ui";
 import { cameraStream, captureDisplay, micStream, type Captured } from "../lib/recorder";
 import { loadPrefs, savePrefs, type Prefs } from "../lib/prefs";
-import { CAMERA_PRESETS, nearestCorner } from "../lib/defaults";
+import { nearestCorner } from "../lib/defaults";
 import { cameraCropRect } from "../lib/render";
 import { WALLPAPERS, wallpaperCss } from "../lib/wallpapers";
 import type { CameraSettings } from "../lib/types";
@@ -223,9 +223,6 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
   const top = cam.corner.startsWith("bottom") ? stageH - gap - bubbleH : gap;
   const radius = `${(cam.roundness * Math.min(bubbleW, bubbleH)) / 2}px`;
   const crop = cameraCropRect(cam.crop, camAspect);
-  const activePreset = (Object.keys(CAMERA_PRESETS) as (keyof typeof CAMERA_PRESETS)[]).find(
-    (k) => CAMERA_PRESETS[k].crop.aspect === cam.crop.aspect && Math.abs(CAMERA_PRESETS[k].roundness - cam.roundness) < 0.01,
-  );
   const bg = prefs.lastStyle.background;
 
   return (
@@ -287,13 +284,6 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
         </Field>
         {prefs.cameraId && (
           <>
-            <Field label="Camera shape" extra={<span className="dim">fine-tune later in the editor</span>}>
-              <div className="seg">
-                {([["circle", "Circle"], ["rounded", "Rounded"], ["rectangle", "Rectangle"]] as const).map(([k, label]) => (
-                  <button key={k} className={activePreset === k ? "on" : ""} onClick={() => setCam({ ...structuredClone(CAMERA_PRESETS[k]), crop: { ...cam.crop, aspect: CAMERA_PRESETS[k].crop.aspect } })}>{label}</button>
-                ))}
-              </div>
-            </Field>
             <Field label="Camera size">
               <Slider value={cam.size} min={0.12} max={0.6} onChange={(size) => setCam({ size })} format={(v) => `${Math.round(v * 100)}%`} />
             </Field>
