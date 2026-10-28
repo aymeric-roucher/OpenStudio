@@ -20,10 +20,10 @@ export type Tab = "background" | "camera" | "captions" | "audio" | "smart" | "la
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 3, 4, 8];
 const GRADIENTS: [string, string][] = [
-  ["#7c5cff", "#ff6ec7"], ["#00c6ff", "#0072ff"], ["#f7971e", "#ffd200"], ["#11998e", "#38ef7d"],
+  ["#2f7cf6", "#22d3ee"], ["#7c5cff", "#ff6ec7"], ["#f7971e", "#ffd200"], ["#11998e", "#38ef7d"],
   ["#fc466b", "#3f5efb"], ["#232526", "#414345"], ["#ee9ca7", "#ffdde1"], ["#0f2027", "#2c5364"],
 ];
-const COLORS = ["#0b0b0f", "#1b1b22", "#ffffff", "#f4f1ea", "#7c5cff", "#ff4d5e", "#19b6a5", "#ffb020"];
+const COLORS = ["#0b0b0f", "#1b1b22", "#ffffff", "#f4f1ea", "#2f7cf6", "#ff4d5e", "#19b6a5", "#ffb020"];
 const LANGUAGES: [string | null, string][] = [
   [null, "Detect automatically"], ["en", "English"], ["fr", "French"], ["es", "Spanish"], ["de", "German"], ["it", "Italian"],
   ["pt", "Portuguese"], ["nl", "Dutch"], ["pl", "Polish"], ["ru", "Russian"], ["uk", "Ukrainian"], ["tr", "Turkish"],
