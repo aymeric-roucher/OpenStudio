@@ -14,7 +14,12 @@ export type ZoomRegion = {
   y: number;
   /** Jump straight to the zoomed view, without the eased transition. */
   instant: boolean;
+  /** Follow the detected cursor instead of the fixed focus point. */
+  follow: boolean;
 };
+
+/** Detected cursor position: source seconds, coordinates normalized to the full source video frame. */
+export type CursorSample = { t: number; x: number; y: number };
 
 export type MaskKind = "blur" | "pixelate" | "highlight";
 
@@ -104,6 +109,8 @@ export type Project = Style & {
   volume: number;
   muted: boolean;
   music: Music | null;
+  /** Cursor path detected from the pixels of the recording, sorted by time. Empty until analyzed. */
+  cursor: CursorSample[];
 };
 
 export type Recording = {

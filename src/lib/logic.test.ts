@@ -102,7 +102,7 @@ describe("timeline", () => {
 });
 
 describe("zoom", () => {
-  const zooms: ZoomRegion[] = [{ id: "z", start: 2, end: 6, scale: 2, x: 0.9, y: 0.5, instant: false }];
+  const zooms: ZoomRegion[] = [{ id: "z", start: 2, end: 6, scale: 2, x: 0.9, y: 0.5, instant: false, follow: false }];
   it.each([
     ["before region: full view", 0, { x: 0, y: 0, w: 1, h: 1 }],
     ["fully zoomed: focus clamped inside frame", 4, { x: 0.5, y: 0.25, w: 0.5, h: 0.5 }],

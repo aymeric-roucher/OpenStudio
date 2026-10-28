@@ -179,7 +179,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
     const id = uid();
     const [start, end] = outputSpanToSource(p.segments, slot[0], slot[1]);
     h.update((x) => {
-      if (kind === "zoom") return { ...x, zooms: [...x.zooms, { id, start, end, scale: 2, x: 0.5, y: 0.5, instant: false }] };
+      if (kind === "zoom") return { ...x, zooms: [...x.zooms, { id, start, end, scale: 2, x: 0.5, y: 0.5, instant: false, follow: false }] };
       if (kind === "mask") {
         const m: MaskRegion = { id, start, end, kind: "blur", rect: { x: 0.35, y: 0.35, w: 0.3, h: 0.3 }, strength: 0.6 };
         return { ...x, masks: [...x.masks, m] };

@@ -400,7 +400,7 @@ function SmartPanel({ api }: { api: EditorApi }) {
         // Focus is given on the source frame: map it through the crop onto the composition.
         const f = frameRect(x, W, H, rec.width, rec.height, r[0]);
         const fx = (z.x - x.crop.x) / x.crop.w, fy = (z.y - x.crop.y) / x.crop.h;
-        added.push({ id: uid(), start: z.start, end: z.end, scale: z.scale, x: (f.x + fx * f.w) / W, y: (f.y + fy * f.h) / H, instant: false });
+        added.push({ id: uid(), start: z.start, end: z.end, scale: z.scale, x: (f.x + fx * f.w) / W, y: (f.y + fy * f.h) / H, instant: false, follow: false });
       }
       api.notify(added.length ? `Added ${added.length} zooms` : "No free spot for the suggested zooms");
       return { ...x, zooms: [...x.zooms, ...added].sort((a, b) => a.start - b.start) };

@@ -35,6 +35,7 @@ export function defaultProject(rec: Recording, style: Style): Project {
     volume: 1,
     muted: false,
     music: null,
+    cursor: [],
   };
 }
 
