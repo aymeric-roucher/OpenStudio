@@ -101,3 +101,37 @@ export function adoptStyles(win: Window) {
   for (const node of document.querySelectorAll("style, link[rel=stylesheet]")) win.document.head.appendChild(node.cloneNode(true));
   win.document.body.style.margin = "0";
 }
+
+const MIN_SIZE = 64;
+const MAX_SIZE = 7680;
+
+/** Width and height inputs, in pixels, for a custom output size. Sizes are rounded to even numbers, as video encoders require. */
+export function CustomSize(props: { initial: { w: number; h: number }; onApply: (size: { w: number; h: number }) => void }) {
+  const [w, setW] = useState(String(props.initial.w));
+  const [h, setH] = useState(String(props.initial.h));
+  const parse = (v: string) => Math.round(Math.min(Math.max(Number(v), MIN_SIZE), MAX_SIZE) / 2) * 2;
+  const valid = [w, h].every((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= MIN_SIZE && Number(v) <= MAX_SIZE);
+  const apply = () => valid && props.onApply({ w: parse(w), h: parse(h) });
+  const input = (value: string, set: (v: string) => void, label: string) => (
+    <input
+      className="input mono"
+      type="number"
+      min={MIN_SIZE}
+      max={MAX_SIZE}
+      aria-label={label}
+      value={value}
+      onChange={(e) => set(e.target.value)}
+      onKeyDown={(e) => e.key === "Enter" && apply()}
+    />
+  );
+  return (
+    <div className="custom-size">
+      <span>Custom</span>
+      {input(w, setW, "Width in pixels")}
+      <span className="muted">×</span>
+      {input(h, setH, "Height in pixels")}
+      <span className="muted">px</span>
+      <button className="btn primary small" disabled={!valid} onClick={apply}>Set</button>
+    </div>
+  );
+}

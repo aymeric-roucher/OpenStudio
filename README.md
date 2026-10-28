@@ -30,7 +30,7 @@ Best in a recent Chromium browser (Chrome, Edge, Arc, Brave). Firefox and Safari
 - Zooms (Z): smooth or instant, zoom level, focus point picked on the preview or in the panel.
 - Masks (M): blur, pixelate, or highlight an area for a time range.
 - Dynamic camera layouts (L): fullscreen camera, side by side (stacked on vertical canvases), or hidden for a section, with animated transitions. The bubble can shrink while zoomed in.
-- Aspect ratios: 16:9, 9:16, 1:1, 4:3, 3:4, or matching the recording. Crop the recording.
+- Aspect ratios: 16:9, 9:16, 1:1, 4:3, 3:4, matching the recording, or a custom size in pixels (exported at exactly that size). Crop the recording.
 - Background: 16 procedural wallpapers, gradients, solid colors, or your own image, with blur. Frame padding, roundness, shadow and inset border.
 - Camera: anchored to a corner with an adjustable, equal distance from both edges (drag to snap to another corner). Crop sets the bubble ratio and framing, a roundness slider sets the corners, and Circle, Rounded and Rectangle are presets for both. Size, mirror, shadow, border.
 - Captions generated on your device with Whisper (transformers.js, WebGPU when available), editable, with size and position.

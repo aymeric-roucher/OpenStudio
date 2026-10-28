@@ -128,8 +128,9 @@ describe("layout", () => {
     ["wide 1080p", "wide", 1920, 1, [1920, 1080]],
     ["vertical 1080p", "vertical", 1920, 1, [1080, 1920]],
     ["auto follows content", "auto", 1280, 4 / 3, [1280, 960]],
+    ["custom keeps the typed ratio", "custom", 1350, 1, [1080, 1350]],
   ] as const)("output size %s", (_name, aspect, long, contentAspect, expected) => {
-    expect(outputSize(aspect, long, contentAspect)).toEqual(expected);
+    expect(outputSize({ aspect, customSize: { w: 1080, h: 1350 } }, long, contentAspect)).toEqual(expected);
   });
 
   it("fits a 16:9 frame inside a square canvas with padding", () => {
@@ -218,12 +219,14 @@ describe("captions", () => {
 
 describe("export", () => {
   const rec = { width: 1920, height: 1080 };
-  const project = { aspect: "wide" as const, crop: { x: 0, y: 0, w: 1, h: 1 }, segments: segs };
+  const base = { crop: { x: 0, y: 0, w: 1, h: 1 }, segments: segs, customSize: { w: 1080, h: 1350 } };
   it.each([
-    ["mp4 keeps settings", { format: "mp4", long: 1920, fps: 60, quality: "high" }, { width: 1920, height: 1080, fps: 60, frames: 360 }],
-    ["gif caps fps and size", { format: "gif", long: 3840, fps: 30, quality: "low" }, { width: 960, height: 540, fps: 15, frames: 90 }],
-  ] as const)("plan: %s", (_name, settings, expected) => {
-    expect(exportPlan(rec, project, settings)).toEqual(expected);
+    ["mp4 keeps settings", "wide", { format: "mp4", long: 1920, fps: 60, quality: "high" }, { width: 1920, height: 1080, fps: 60, frames: 360 }],
+    ["gif caps fps and size", "wide", { format: "gif", long: 3840, fps: 30, quality: "low" }, { width: 960, height: 540, fps: 15, frames: 90 }],
+    ["custom size is exported exactly", "custom", { format: "mp4", long: 3840, fps: 60, quality: "high" }, { width: 1080, height: 1350, fps: 60, frames: 360 }],
+    ["custom gif is scaled down to the gif cap", "custom", { format: "gif", long: 1920, fps: 30, quality: "low" }, { width: 768, height: 960, fps: 15, frames: 90 }],
+  ] as const)("plan: %s", (_name, aspect, settings, expected) => {
+    expect(exportPlan(rec, { ...base, aspect }, settings)).toEqual(expected);
   });
 
   it.each([15, 24, 30])("gif delays at %i fps add up to the exact duration", (fps) => {

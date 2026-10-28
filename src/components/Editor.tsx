@@ -10,8 +10,8 @@ import { Player } from "../lib/player";
 import { loadPrefs, savePrefs } from "../lib/prefs";
 import { cameraState, frameRect, onTimeline, renderFrame, viewAt, type FrameSources } from "../lib/render";
 import { freeSlot, outputDuration, outputSpanToSource, splitAt } from "../lib/timeline";
-import type { Aspect, MaskRegion, Project, Recording, Rect, Style } from "../lib/types";
-import { Dropdown } from "./ui";
+import type { MaskRegion, PresetAspect, Project, Recording, Rect, Style } from "../lib/types";
+import { CustomSize, Dropdown } from "./ui";
 import Timeline from "./Timeline";
 import Inspector, { type Tab } from "./Inspector";
 import { CameraCropModal, CommandMenu, CropModal, ExportDialog, type Action } from "./Dialogs";
@@ -98,7 +98,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; onN
   }, []);
 
   const contentAspect = (p.crop.w * rec.width) / (p.crop.h * rec.height);
-  const [ow, oh] = outputSize(p.aspect, 1920, contentAspect);
+  const [ow, oh] = outputSize(p, 1920, contentAspect);
   const ratio = ow / oh;
   const display = box.w / box.h > ratio ? { w: box.h * ratio, h: box.h } : { w: box.w, h: box.w / ratio };
   const scale = Math.min(window.devicePixelRatio * quality, 1920 / Math.max(display.w, display.h));
@@ -147,7 +147,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; onN
   const snapshot = useCallback(
     (long: number, override?: Partial<Project>) => {
       const proj = { ...p, ...override };
-      const [w, hh] = outputSize(proj.aspect, long, contentAspect);
+      const [w, hh] = outputSize(proj, long, contentAspect);
       const c = document.createElement("canvas");
       Object.assign(c, { width: w, height: hh });
       const src = sources();
@@ -236,7 +236,8 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; onN
     { id: "start", label: "Go to start", keys: "Home", run: () => player.seek(0) },
     { id: "end", label: "Go to end", keys: "End", run: () => player.seek(duration) },
     ...TABS.map((t) => ({ id: `tab-${t.id}`, label: `Open ${t.label} settings`, run: () => { setSel(null); setTab(t.id); } })),
-    ...(Object.keys(ASPECTS) as Exclude<Aspect, "auto">[]).map((a) => ({ id: `aspect-${a}`, label: `Aspect ratio: ${ASPECTS[a].label} ${ASPECTS[a].hint}`, run: () => h.update((x) => ({ ...x, aspect: a })) })),
+    ...(Object.keys(ASPECTS) as PresetAspect[]).map((a) => ({ id: `aspect-${a}`, label: `Aspect ratio: ${ASPECTS[a].label} ${ASPECTS[a].hint}`, run: () => h.update((x) => ({ ...x, aspect: a })) })),
+    { id: "aspect-custom", label: `Aspect ratio: Custom ${p.customSize.w}×${p.customSize.h} px`, run: () => h.update((x) => ({ ...x, aspect: "custom" })) },
     { id: "new", label: "New recording", run: newRecording },
   ];
 
@@ -353,7 +354,10 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; onN
     return { left: a.x, top: a.y, width: b.x - a.x, height: b.y - a.y };
   })();
 
-  const aspectLabel = useMemo(() => (p.aspect === "auto" ? { label: "Auto", hint: "source" } : ASPECTS[p.aspect]), [p.aspect]);
+  const aspectLabel = useMemo(
+    () => (p.aspect === "auto" ? { label: "Auto", hint: "source" } : p.aspect === "custom" ? { label: "Custom", hint: `${p.customSize.w}×${p.customSize.h}` } : ASPECTS[p.aspect]),
+    [p.aspect, p.customSize],
+  );
 
   return (
     <div className="editor">
@@ -379,19 +383,24 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; onN
             <Dropdown
               trigger={(toggle) => (
                 <button className="btn ghost" onClick={toggle}>
-                  <LayoutTemplate size={15} /> {aspectLabel.label} <span className="dim">{aspectLabel.hint}</span> <ChevronDown size={14} />
+                  <LayoutTemplate size={15} /> {aspectLabel.label} <span className="muted">{aspectLabel.hint}</span> <ChevronDown size={14} />
                 </button>
               )}
             >
               {(close) => (
                 <>
-                  {(Object.keys(ASPECTS) as Exclude<Aspect, "auto">[]).map((a) => (
+                  {(Object.keys(ASPECTS) as PresetAspect[]).map((a) => (
                     <button key={a} onClick={() => { h.update((x) => ({ ...x, aspect: a })); close(); }}>
                       {ASPECTS[a].label} <span className="hint">{ASPECTS[a].hint}</span>
                     </button>
                   ))}
                   <div className="sep" />
                   <button onClick={() => { h.update((x) => ({ ...x, aspect: "auto" })); close(); }}>Auto <span className="hint">match recording</span></button>
+                  <div className="sep" />
+                  <CustomSize
+                    initial={p.customSize}
+                    onApply={(customSize) => { h.update((x) => ({ ...x, aspect: "custom", customSize })); close(); }}
+                  />
                 </>
               )}
             </Dropdown>
@@ -401,7 +410,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; onN
             <Dropdown
               align="right"
               trigger={(toggle) => (
-                <button className="btn ghost" onClick={toggle}>Preview quality <span className="dim">{quality === 1 ? "Full" : "Half"}</span> <ChevronDown size={14} /></button>
+                <button className="btn ghost" onClick={toggle}>Preview quality <span className="muted">{quality === 1 ? "Full" : "Half"}</span> <ChevronDown size={14} /></button>
               )}
             >
               {(close) => (

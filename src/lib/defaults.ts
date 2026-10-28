@@ -4,6 +4,7 @@ export const uid = () => Math.random().toString(36).slice(2, 10);
 
 export const DEFAULT_STYLE: Style = {
   aspect: "wide",
+  customSize: { w: 1080, h: 1350 },
   background: {
     kind: "wallpaper",
     wallpaper: 0,
@@ -41,8 +42,8 @@ export function defaultProject(rec: Recording, style: Style): Project {
 }
 
 export function styleOf(p: Project): Style {
-  const { aspect, background, padding, radius, shadow, inset, camera, captionStyle, zoomSpeed, motionBlur, keepZoomedIn } = p;
-  return structuredClone({ aspect, background, padding, radius, shadow, inset, camera, captionStyle, zoomSpeed, motionBlur, keepZoomedIn });
+  const { aspect, customSize, background, padding, radius, shadow, inset, camera, captionStyle, zoomSpeed, motionBlur, keepZoomedIn } = p;
+  return structuredClone({ aspect, customSize, background, padding, radius, shadow, inset, camera, captionStyle, zoomSpeed, motionBlur, keepZoomedIn });
 }
 
 /** Camera shape presets: they only set the crop ratio and the roundness, which stay editable afterwards. */

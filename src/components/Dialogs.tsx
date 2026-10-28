@@ -215,7 +215,11 @@ export function ExportDialog(props: { api: EditorApi; bgImage: CanvasImageSource
             <Segmented value={s.format} onChange={(format) => setS({ ...s, format })} options={[{ value: "mp4", label: "MP4" }, { value: "webm", label: "WebM" }, { value: "gif", label: "GIF" }]} />
           </Field>
           <Field label="Resolution">
-            <Segmented value={s.long} onChange={(long) => setS({ ...s, long })} options={RESOLUTIONS} />
+            {api.p.aspect === "custom" ? (
+              <span className="muted">{api.p.customSize.w} × {api.p.customSize.h} px, your custom size</span>
+            ) : (
+              <Segmented value={s.long} onChange={(long) => setS({ ...s, long })} options={RESOLUTIONS} />
+            )}
           </Field>
           <Field label="Frame rate">
             <Segmented value={s.fps} onChange={(fps) => setS({ ...s, fps })} options={[24, 30, 60].map((v) => ({ value: v, label: `${v} fps` }))} />

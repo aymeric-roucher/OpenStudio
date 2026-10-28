@@ -1,6 +1,6 @@
-import type { Aspect, Rect } from "./types";
+import type { PresetAspect, Rect, Style } from "./types";
 
-export const ASPECTS: Record<Exclude<Aspect, "auto">, { label: string; ratio: number; hint: string }> = {
+export const ASPECTS: Record<PresetAspect, { label: string; ratio: number; hint: string }> = {
   wide: { label: "Wide", ratio: 16 / 9, hint: "16:9" },
   vertical: { label: "Vertical", ratio: 9 / 16, hint: "9:16" },
   square: { label: "Square", ratio: 1, hint: "1:1" },
@@ -11,8 +11,9 @@ export const ASPECTS: Record<Exclude<Aspect, "auto">, { label: string; ratio: nu
 const even = (v: number) => Math.round(v / 2) * 2;
 
 /** Output canvas size whose long side is `long` pixels. */
-export function outputSize(aspect: Aspect, long: number, contentAspect: number): [number, number] {
-  const ratio = aspect === "auto" ? contentAspect : ASPECTS[aspect].ratio;
+export function outputSize(style: Pick<Style, "aspect" | "customSize">, long: number, contentAspect: number): [number, number] {
+  const { aspect, customSize } = style;
+  const ratio = aspect === "auto" ? contentAspect : aspect === "custom" ? customSize.w / customSize.h : ASPECTS[aspect].ratio;
   return ratio >= 1 ? [even(long), even(long / ratio)] : [even(long * ratio), even(long)];
 }
 

@@ -51,12 +51,14 @@ const VIDEO_CODECS: Record<"mp4" | "webm", VideoCodec[]> = { mp4: ["avc", "hevc"
 const AUDIO_CODECS: Record<"mp4" | "webm", AudioCodec[]> = { mp4: ["aac", "opus"], webm: ["opus"] };
 
 /** Output canvas size, frame rate and frame count for an export, with GIF caps applied. */
-export function exportPlan(rec: Pick<Recording, "width" | "height">, project: Pick<Project, "aspect" | "crop" | "segments">, settings: ExportSettings) {
+export function exportPlan(rec: Pick<Recording, "width" | "height">, project: Pick<Project, "aspect" | "customSize" | "crop" | "segments">, settings: ExportSettings) {
   const gif = settings.format === "gif";
   const fps = gif ? Math.min(settings.fps, GIF_MAX_FPS) : settings.fps;
-  const long = gif ? Math.min(settings.long, GIF_MAX_LONG) : settings.long;
+  // A custom size is exported at exactly that size, so it replaces the resolution setting.
+  const requested = project.aspect === "custom" ? Math.max(project.customSize.w, project.customSize.h) : settings.long;
+  const long = gif ? Math.min(requested, GIF_MAX_LONG) : requested;
   const contentAspect = (project.crop.w * rec.width) / (project.crop.h * rec.height);
-  const [width, height] = outputSize(project.aspect, long, contentAspect);
+  const [width, height] = outputSize(project, long, contentAspect);
   const frames = Math.max(1, Math.round(outputDuration(project.segments) * fps));
   return { width, height, fps, frames };
 }

@@ -44,7 +44,11 @@ export type CaptionStyle = {
 
 export type Music = { url: string; name: string; volume: number; fade: boolean };
 
-export type Aspect = "wide" | "vertical" | "square" | "classic" | "tall" | "auto";
+/** Preset ratios, "auto" (match the recording) or "custom" (an exact pixel size, see `Style.customSize`). */
+export type Aspect = "wide" | "vertical" | "square" | "classic" | "tall" | "auto" | "custom";
+
+/** A preset ratio, as opposed to "auto" and "custom". */
+export type PresetAspect = Exclude<Aspect, "auto" | "custom">;
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
@@ -89,6 +93,8 @@ export type CameraSettings = {
 /** Look & feel settings, shareable as presets. */
 export type Style = {
   aspect: Aspect;
+  /** Output size in pixels used when `aspect` is "custom". */
+  customSize: { w: number; h: number };
   background: Background;
   /** Fraction of the canvas short side. */
   padding: number;

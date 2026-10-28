@@ -451,7 +451,7 @@ function SmartPanel({ api }: { api: EditorApi }) {
   const typing = samples ? findTypingRanges(samples, 2) : [];
 
   const addZooms = (list: typeof zooms, follow: boolean) => {
-    const [W, H] = outputSize(p.aspect, 1920, (p.crop.w * rec.width) / (p.crop.h * rec.height));
+    const [W, H] = outputSize(p, 1920, (p.crop.w * rec.width) / (p.crop.h * rec.height));
     update((x) => {
       const added: ZoomRegion[] = [];
       for (const z of list) {
