@@ -3,6 +3,7 @@ import { outputToSource, regionsToOutput } from "./timeline";
 import type { CameraLayout, Project, Rect } from "./types";
 import { drawWallpaper, WALLPAPERS } from "./wallpapers";
 import { ZOOM_TRANSITION, zoomViewport } from "./zoom";
+import { cursorAt } from "./cursor";
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -56,20 +57,33 @@ export function onTimeline(p: Project): Project {
 
 export type Dims = { W: number; H: number; screenW: number; screenH: number };
 
-/** View outside of zooms: the full canvas, or the screen frame filling it when "keep zoomed in" is on. */
-function baseView(p: Project, t: number, d: Dims): Rect {
+const CURSOR_SMOOTHING = 0.35;
+
+/** Smoothed detected cursor at output time t, normalized to the output canvas, or null if unknown there. */
+export function cursorOnCanvas(p: Project, t: number, d: Dims): { x: number; y: number } | null {
+  if (!p.cursor.length) return null;
+  const c = cursorAt(p.cursor, outputToSource(p.segments, t).source, CURSOR_SMOOTHING);
+  if (!c) return null;
+  const f = frameRect(p, d.W, d.H, d.screenW, d.screenH, t);
+  return { x: (f.x + ((c.x - p.crop.x) / p.crop.w) * f.w) / d.W, y: (f.y + ((c.y - p.crop.y) / p.crop.h) * f.h) / d.H };
+}
+
+/** View outside of zooms: the full canvas, or the screen frame filling it when "keep zoomed in" is on (panning to the cursor). */
+function baseView(p: Project, t: number, d: Dims, cursor: { x: number; y: number } | null): Rect {
   const f = frameRect(p, d.W, d.H, d.screenW, d.screenH, t);
   const w = Math.min(f.w / d.W, f.h / d.H);
   const clampC = (c: number, lo: number, hi: number) => Math.min(Math.max(c, lo + w / 2), hi - w / 2);
-  const cx = clampC((f.x + f.w / 2) / d.W, f.x / d.W, (f.x + f.w) / d.W);
-  const cy = clampC((f.y + f.h / 2) / d.H, f.y / d.H, (f.y + f.h) / d.H);
+  const cx = clampC(cursor ? cursor.x : (f.x + f.w / 2) / d.W, f.x / d.W, (f.x + f.w) / d.W);
+  const cy = clampC(cursor ? cursor.y : (f.y + f.h / 2) / d.H, f.y / d.H, (f.y + f.h) / d.H);
   return { x: cx - w / 2, y: cy - w / 2, w, h: w };
 }
 
-/** Zoom view at output time t. Pass the canvas and screen sizes to honour "keep zoomed in". */
+/** Zoom view at output time t. Pass the canvas and screen sizes to honour "keep zoomed in" and cursor following. */
 export function viewAt(p: Project, t: number, dims?: Dims): Rect {
-  const base = p.keepZoomedIn && dims ? baseView(p, t, dims) : undefined;
-  return zoomViewport(onTimeline(p).zooms, t, ZOOM_TRANSITION[p.zoomSpeed], base);
+  const cursor = dims ? cursorOnCanvas(p, t, dims) : null;
+  const base = p.keepZoomedIn && dims ? baseView(p, t, dims, cursor) : undefined;
+  const zooms = onTimeline(p).zooms.map((z) => (z.follow && cursor ? { ...z, x: cursor.x, y: cursor.y } : z));
+  return zoomViewport(zooms, t, ZOOM_TRANSITION[p.zoomSpeed], base);
 }
 
 // ---------- shadows ----------
