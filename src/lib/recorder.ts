@@ -1,12 +1,3 @@
-export type SurfaceKind = "monitor" | "window" | "browser";
-
-export type CaptureConfig = {
-  surface: SurfaceKind;
-  cameraId: string | null;
-  micId: string | null;
-  systemAudio: boolean;
-};
-
 export type Captured = { display: MediaStream; camera: MediaStream | null; mic: MediaStream | null };
 
 const pickMime = (candidates: string[]) => {
@@ -16,14 +7,14 @@ const pickMime = (candidates: string[]) => {
 };
 
 /** Ask the user what to share. Must be called from a user gesture. */
-export async function captureDisplay(cfg: CaptureConfig): Promise<MediaStream> {
+export async function captureDisplay(systemAudio: boolean): Promise<MediaStream> {
   return navigator.mediaDevices.getDisplayMedia({
-    video: { displaySurface: cfg.surface, frameRate: { ideal: 60 }, width: { ideal: 3840 }, height: { ideal: 2160 } },
-    audio: cfg.systemAudio ? { suppressLocalAudioPlayback: false } : false,
-    // Chrome hints: offer the chosen surface first and allow sharing this tab too.
+    // The browser's own dialog lets the user pick a screen, a window or a tab: open it on "Entire screen".
+    video: { displaySurface: "monitor", frameRate: { ideal: 60 }, width: { ideal: 3840 }, height: { ideal: 2160 } },
+    audio: systemAudio ? { suppressLocalAudioPlayback: false } : false,
     selfBrowserSurface: "include",
     surfaceSwitching: "include",
-    systemAudio: cfg.systemAudio ? "include" : "exclude",
+    systemAudio: systemAudio ? "include" : "exclude",
     monitorTypeSurfaces: "include",
   } as DisplayMediaStreamOptions);
 }

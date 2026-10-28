@@ -16,7 +16,7 @@ Best in a recent Chromium browser (Chrome, Edge, Arc, Brave). Firefox and Safari
 ## Features
 
 **Recording**
-- Record an entire screen, a window, a browser tab, or an area (record the screen, then crop).
+- Record any screen, window or browser tab: you pick it in the browser's own share dialog. Crop it afterwards in the editor.
 - Camera and microphone with device pickers, live preview and level meter. Drag the camera bubble to place it before recording, pick its shape and size.
 - Optional system or tab audio, mixed with the microphone.
 - Countdown before recording (off, 3, 5 or 10 seconds).

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AppWindow, Crop, FileVideo, Monitor, PanelTop, Video } from "lucide-react";
+import { FileVideo, Monitor, Video } from "lucide-react";
 import { adoptStyles, Field, Segmented, Slider, Toggle } from "./ui";
-import { cameraStream, captureDisplay, micStream, type Captured, type SurfaceKind } from "../lib/recorder";
+import { cameraStream, captureDisplay, micStream, type Captured } from "../lib/recorder";
 import { loadPrefs, savePrefs, type Prefs } from "../lib/prefs";
 import { CAMERA_PRESETS, nearestCorner } from "../lib/defaults";
 import { cameraCropRect } from "../lib/render";
@@ -14,15 +14,7 @@ export type StartRequest = {
   pip: Window | null;
   countdown: number;
   notes: string;
-  surface: Prefs["surface"];
 };
-
-const SOURCES: { value: Prefs["surface"]; label: string; hint: string; icon: typeof Monitor }[] = [
-  { value: "monitor", label: "Entire screen", hint: "A whole display", icon: Monitor },
-  { value: "window", label: "Window", hint: "A single app window", icon: AppWindow },
-  { value: "browser", label: "Browser tab", hint: "Also captures tab audio", icon: PanelTop },
-  { value: "area", label: "Area", hint: "Record the screen, then pick the area to keep", icon: Crop },
-];
 
 type Pip = { requestWindow(o: { width: number; height: number }): Promise<Window> };
 const pipApi = (): Pip | null => (window as unknown as { documentPictureInPicture?: Pip }).documentPictureInPicture ?? null;
@@ -175,8 +167,7 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
 
   /** Open the share picker. Must run inside a click (in this page or in the floating window). */
   const share = async (win: Window | null) => {
-    const surface: SurfaceKind = prefs.surface === "area" ? "monitor" : prefs.surface;
-    const shared = await Promise.allSettled([captureDisplay({ surface, cameraId: prefs.cameraId, micId: prefs.micId, systemAudio: prefs.systemAudio })]);
+    const shared = await Promise.allSettled([captureDisplay(prefs.systemAudio)]);
     if (shared[0].status === "rejected") {
       win?.close();
       setPip(null);
@@ -190,7 +181,6 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
       pip: win,
       countdown: prefs.countdown,
       notes: prefs.notes,
-      surface: prefs.surface,
     });
   };
 
@@ -262,8 +252,8 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
           <div className="stage-canvas" ref={stageRef} style={{ background: bg.kind === "wallpaper" ? wallpaperCss(WALLPAPERS[bg.wallpaper]) : bg.kind === "color" ? bg.color : `linear-gradient(${bg.gradient.angle}deg, ${bg.gradient.from}, ${bg.gradient.to})` }}>
             <div className="stage-screen">
               <Monitor size={34} strokeWidth={1.5} />
-              <div style={{ fontWeight: 600 }}>{SOURCES.find((s) => s.value === prefs.surface)!.label}</div>
-              <div className="muted" style={{ fontSize: 12 }}>You will choose exactly what to share after clicking record.</div>
+              <div style={{ fontWeight: 600 }}>Your screen goes here</div>
+              <div className="muted" style={{ fontSize: 12 }}>After clicking record, pick a screen, a window or a tab in your browser's share dialog.</div>
             </div>
             {camStream && cam.visible && (
               <div className="stage-cam" onPointerDown={onCamDown} style={{ left, top, width: bubbleW, height: bubbleH, borderRadius: radius }} title="Drag to position your camera">
@@ -288,18 +278,6 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
       </div>
 
       <div className="setup-side">
-        <Field label="What to record">
-          <div className="source-grid">
-            {SOURCES.map((s) => (
-              <button key={s.value} className={`source-card ${prefs.surface === s.value ? "on" : ""}`} onClick={() => update({ surface: s.value })}>
-                <s.icon size={18} />
-                <span style={{ fontWeight: 600 }}>{s.label}</span>
-                <small>{s.hint}</small>
-              </button>
-            ))}
-          </div>
-        </Field>
-
         <Field label="Camera">
           <select className="select" value={prefs.cameraId ?? ""} onChange={(e) => update({ cameraId: e.target.value || null })}>
             <option value="">No camera</option>

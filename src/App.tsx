@@ -11,7 +11,7 @@ type Phase =
   | { kind: "setup" }
   | { kind: "recording"; req: StartRequest }
   | { kind: "loading"; message: string }
-  | { kind: "editor"; rec: Recording; style: Style; cropOnOpen: boolean };
+  | { kind: "editor"; rec: Recording; style: Style };
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>({ kind: "setup" });
@@ -37,10 +37,10 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", onBefore);
   }, [phase.kind]);
 
-  const open = async (screen: Blob, camera: Blob | null, flags: number[], remux: boolean, cropOnOpen: boolean) => {
+  const open = async (screen: Blob, camera: Blob | null, flags: number[], remux: boolean) => {
     setPhase({ kind: "loading", message: "Preparing your recording…" });
     const rec = await loadRecording(screen, camera, flags, remux);
-    setPhase({ kind: "editor", rec, style: loadPrefs().lastStyle, cropOnOpen });
+    setPhase({ kind: "editor", rec, style: loadPrefs().lastStyle });
   };
 
   const run = (p: Promise<unknown>) =>
@@ -54,13 +54,13 @@ export default function App() {
       {phase.kind === "setup" && (
         <Setup
           onStart={(req) => setPhase({ kind: "recording", req })}
-          onImport={(file) => run(open(file, null, [], false, false))}
+          onImport={(file) => run(open(file, null, [], false))}
         />
       )}
       {phase.kind === "recording" && (
         <RecordingSession
           req={phase.req}
-          onDone={(r) => run(open(r.screen, r.camera, r.flags, true, phase.req.surface === "area"))}
+          onDone={(r) => run(open(r.screen, r.camera, r.flags, true))}
           onCancel={() => setPhase({ kind: "setup" })}
         />
       )}
@@ -74,7 +74,6 @@ export default function App() {
         <Editor
           rec={phase.rec}
           initialStyle={phase.style}
-          cropOnOpen={phase.cropOnOpen}
           onNew={() => setPhase({ kind: "setup" })}
         />
       )}

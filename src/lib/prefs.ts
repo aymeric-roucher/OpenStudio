@@ -1,10 +1,8 @@
 import { DEFAULT_STYLE, normalizeStyle } from "./defaults";
-import type { SurfaceKind } from "./recorder";
 import type { Style } from "./types";
 
 /** Small user preferences kept in localStorage. Projects themselves are never persisted. */
 export type Prefs = {
-  surface: SurfaceKind | "area";
   cameraId: string | null;
   micId: string | null;
   systemAudio: boolean;
@@ -19,7 +17,6 @@ export type Prefs = {
 const KEY = "openstudio.prefs.v1";
 
 const DEFAULT_PREFS: Prefs = {
-  surface: "monitor",
   cameraId: null,
   micId: null,
   systemAudio: false,

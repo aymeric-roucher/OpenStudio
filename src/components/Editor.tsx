@@ -50,7 +50,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export default function Editor(props: { rec: Recording; initialStyle: Style; cropOnOpen: boolean; onNew: () => void }) {
+export default function Editor(props: { rec: Recording; initialStyle: Style; onNew: () => void }) {
   const { rec } = props;
   const h = useHistory(() => defaultProject(rec, props.initialStyle));
   const p = h.state;
@@ -59,7 +59,7 @@ export default function Editor(props: { rec: Recording; initialStyle: Style; cro
   const [playing, setPlaying] = useState(false);
   const [sel, setSel] = useState<Selection>(null);
   const [tab, setTab] = useState<Tab>("background");
-  const [modal, setModal] = useState<"crop" | "camera-crop" | "export" | "command" | null>(props.cropOnOpen ? "crop" : null);
+  const [modal, setModal] = useState<"crop" | "camera-crop" | "export" | "command" | null>(null);
   const [quality, setQuality] = useState<1 | 0.5>(1);
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

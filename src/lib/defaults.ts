@@ -16,7 +16,7 @@ export const DEFAULT_STYLE: Style = {
   radius: 0.025,
   shadow: 0.6,
   inset: 1,
-  camera: { visible: true, corner: "bottom-right", margin: 0.04, size: 0.28, crop: { aspect: 1, zoom: 1, x: 0.5, y: 0.5 }, roundness: 0.45, mirror: true, shadow: 0.6, border: 0, shrinkOnZoom: true },
+  camera: { visible: true, corner: "bottom-right", margin: 0.04, size: 0.28, crop: { aspect: 1, zoom: 1, x: 0.5, y: 0.5 }, roundness: 0.44, mirror: true, shadow: 0.6, border: 0, shrinkOnZoom: true },
   captionStyle: { enabled: true, size: 0.045, y: 0.88 },
   zoomSpeed: "mellow",
   motionBlur: 0.5,
