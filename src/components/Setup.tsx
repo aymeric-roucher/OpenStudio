@@ -25,23 +25,38 @@ const SOURCES: { value: Prefs["surface"]; label: string; hint: string; icon: typ
 type Pip = { requestWindow(o: { width: number; height: number }): Promise<Window> };
 const pipApi = (): Pip | null => (window as unknown as { documentPictureInPicture?: Pip }).documentPictureInPicture ?? null;
 
-/** Ask for camera and microphone permission once so device labels are available. */
-async function requestPermissions(): Promise<{ camera: boolean; mic: boolean }> {
-  const ask = async (c: MediaStreamConstraints) => {
-    const r = await Promise.allSettled([navigator.mediaDevices.getUserMedia(c)]);
-    if (r[0].status === "fulfilled") {
-      r[0].value.getTracks().forEach((t) => t.stop());
-      return true;
-    }
-    return false;
+/** Whether a device can be used, and if not, why, in words the user can act on. */
+type Access = { ok: true } | { ok: false; reason: string };
+type Perm = { camera: Access; mic: Access };
+
+function explain(e: unknown, device: "camera" | "microphone"): string {
+  // Anything other than a media DOMException is a bug, not a permission problem.
+  if (!(e instanceof DOMException)) throw e;
+  const settingsPane = device === "camera" ? "Camera" : "Microphone";
+  if (e.name === "NotAllowedError" && /system/i.test(e.message))
+    return `Your operating system blocks the browser from using the ${device}. On macOS: System Settings, Privacy & Security, ${settingsPane}, turn your browser on, then quit and reopen the browser.`;
+  if (e.name === "NotAllowedError")
+    return `Blocked for this site. Click the icon at the left of the address bar, allow the ${device}, then press Retry.`;
+  if (e.name === "NotFoundError") return `No ${device} found. Plug one in, then press Retry.`;
+  if (e.name === "NotReadableError") return `The ${device} is busy in another app (Zoom, FaceTime, Teams, Photo Booth…). Close it, then press Retry.`;
+  return `${e.name}: ${e.message}`;
+}
+
+/** Ask for camera and microphone access so device labels are available, keeping the real reason when it fails. */
+async function requestPermissions(): Promise<Perm> {
+  const ask = async (c: MediaStreamConstraints, device: "camera" | "microphone"): Promise<Access> => {
+    const [r] = await Promise.allSettled([navigator.mediaDevices.getUserMedia(c)]);
+    if (r.status === "rejected") return { ok: false, reason: explain(r.reason, device) };
+    r.value.getTracks().forEach((t) => t.stop());
+    return { ok: true };
   };
-  return { camera: await ask({ video: true }), mic: await ask({ audio: true }) };
+  return { camera: await ask({ video: true }, "camera"), mic: await ask({ audio: true }, "microphone") };
 }
 
 export default function Setup(props: { onStart: (r: StartRequest) => void; onImport: (f: File) => void }) {
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [perm, setPerm] = useState<{ camera: boolean; mic: boolean } | null>(null);
+  const [perm, setPerm] = useState<Perm | null>(null);
   const [camStream, setCamStream] = useState<MediaStream | null>(null);
   const [micLevel, setMicLevel] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -62,20 +77,42 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
   const cam = prefs.lastStyle.camera;
   const setCam = (patch: Partial<CameraSettings>) => update({ lastStyle: { ...prefs.lastStyle, camera: { ...cam, ...patch } } });
 
+  const checkAccess = async () => {
+    const p = await requestPermissions();
+    const list = await navigator.mediaDevices.enumerateDevices();
+    setPerm(p);
+    setDevices(list);
+    const cams = list.filter((d) => d.kind === "videoinput");
+    const mics = list.filter((d) => d.kind === "audioinput");
+    const cur = loadPrefs();
+    setPrefs(savePrefs({
+      cameraId: p.camera.ok && cams.length ? (cams.some((d) => d.deviceId === cur.cameraId) ? cur.cameraId : cams[0].deviceId) : null,
+      micId: p.mic.ok && mics.length ? (mics.some((d) => d.deviceId === cur.micId) ? cur.micId : mics[0].deviceId) : null,
+    }));
+  };
+
   useEffect(() => {
-    requestPermissions().then(async (p) => {
-      setPerm(p);
-      const list = await navigator.mediaDevices.enumerateDevices();
-      setDevices(list);
-      const cams = list.filter((d) => d.kind === "videoinput");
-      const mics = list.filter((d) => d.kind === "audioinput");
-      const cur = loadPrefs();
-      setPrefs(savePrefs({
-        cameraId: p.camera && cams.length ? (cams.some((d) => d.deviceId === cur.cameraId) ? cur.cameraId : cams[0].deviceId) : null,
-        micId: p.mic && mics.length ? (mics.some((d) => d.deviceId === cur.micId) ? cur.micId : mics[0].deviceId) : null,
-      }));
-    });
+    checkAccess();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // After fixing access in the address bar or system settings, coming back to the tab checks again.
+  const blocked = perm !== null && (!perm.camera.ok || !perm.mic.ok);
+  useEffect(() => {
+    if (!blocked) return;
+    const onFocus = () => checkAccess();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocked]);
+
+  const accessError = (a: Access | undefined) =>
+    a && !a.ok ? (
+      <div className="access-error">
+        <span>{a.reason}</span>
+        <button className="btn small" onClick={checkAccess}>Retry</button>
+      </div>
+    ) : null;
 
   // Live camera preview, once devices are known (a stored id may be stale).
   useEffect(() => {
@@ -245,11 +282,12 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
           </div>
         </Field>
 
-        <Field label="Camera" extra={perm && !perm.camera ? <span style={{ color: "var(--danger)" }}>Permission denied</span> : null}>
+        <Field label="Camera">
           <select className="select" value={prefs.cameraId ?? ""} onChange={(e) => update({ cameraId: e.target.value || null })}>
             <option value="">No camera</option>
             {cams.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Camera"}</option>)}
           </select>
+          {accessError(perm?.camera)}
         </Field>
         {prefs.cameraId && (
           <>
@@ -262,11 +300,12 @@ export default function Setup(props: { onStart: (r: StartRequest) => void; onImp
           </>
         )}
 
-        <Field label="Microphone" extra={perm && !perm.mic ? <span style={{ color: "var(--danger)" }}>Permission denied</span> : null}>
+        <Field label="Microphone">
           <select className="select" value={prefs.micId ?? ""} onChange={(e) => update({ micId: e.target.value || null })}>
             <option value="">No microphone</option>
             {mics.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Microphone"}</option>)}
           </select>
+          {accessError(perm?.mic)}
           {prefs.micId && <div className="meter"><div style={{ width: `${micLevel * 100}%` }} /></div>}
         </Field>
 
