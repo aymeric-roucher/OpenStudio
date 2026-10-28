@@ -71,3 +71,57 @@ export function trimEdge(
   const end = Math.max(Math.min(value, hi), s.start + MIN_SEGMENT);
   return segments.map((x) => (x.id === id ? { ...x, end } : x));
 }
+
+type Span = { id: string; start: number; end: number };
+export const MIN_REGION = 0.3;
+
+/** Move or resize a region on its track, without overlapping its neighbours or leaving [0, total]. */
+export function moveRegion<T extends Span>(regions: T[], id: string, start: number, end: number, total: number, mode: "move" | "start" | "end"): T[] {
+  const r = regions.find((x) => x.id === id)!;
+  const others = regions.filter((x) => x.id !== id);
+  const lo = Math.max(0, ...others.filter((x) => x.end <= r.start).map((x) => x.end));
+  const hi = Math.min(total, ...others.filter((x) => x.start >= r.end).map((x) => x.start));
+  let s = r.start, e = r.end;
+  if (mode === "move") {
+    const len = r.end - r.start;
+    s = Math.min(Math.max(start, lo), hi - len);
+    e = s + len;
+  }
+  if (mode === "start") s = Math.min(Math.max(start, lo), r.end - MIN_REGION);
+  if (mode === "end") e = Math.max(Math.min(end, hi), r.start + MIN_REGION);
+  return regions.map((x) => (x.id === id ? { ...x, start: s, end: e } : x));
+}
+
+/** Room for a new region of up to `length` seconds starting at t, or null if there is not enough. */
+export function freeSlot(regions: Span[], t: number, length: number, total: number): [number, number] | null {
+  if (regions.some((x) => t >= x.start && t < x.end)) return null;
+  const next = Math.min(total, ...regions.filter((x) => x.start >= t).map((x) => x.start));
+  const end = Math.min(t + length, next);
+  return end - t >= 0.5 ? [t, end] : null;
+}
+
+/** Play the given source ranges at `speed`, splitting segments at range boundaries. */
+export function speedUpRanges(segments: Segment[], ranges: readonly { start: number; end: number }[], speed: number, newId: () => string): Segment[] {
+  const inside = (t: number) => ranges.some((r) => t >= r.start && t < r.end);
+  return segments.flatMap((s) => {
+    const cuts = ranges
+      .flatMap((r) => [r.start, r.end])
+      .filter((c) => c - s.start >= MIN_SEGMENT && s.end - c >= MIN_SEGMENT)
+      .sort((a, b) => a - b);
+    const bounds = [s.start, ...cuts, s.end];
+    return bounds.slice(0, -1).map((start, i) => {
+      const end = bounds[i + 1];
+      return { id: i === 0 ? s.id : newId(), start, end, speed: inside((start + end) / 2) ? speed : s.speed };
+    });
+  });
+}
+
+/** Output span covering what remains of a source range after cuts, or null if it was cut entirely. */
+export function sourceRangeToOutput(segments: Segment[], start: number, end: number): [number, number] | null {
+  const kept = segments
+    .map((s, i) => ({ i, a: Math.max(start, s.start), b: Math.min(end, s.end) }))
+    .filter((k) => k.b > k.a);
+  if (!kept.length) return null;
+  const first = kept[0], last = kept[kept.length - 1];
+  return [sourceToOutput(segments, first.i, first.a), sourceToOutput(segments, last.i, last.b)];
+}

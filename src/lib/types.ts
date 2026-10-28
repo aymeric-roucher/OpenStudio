@@ -105,6 +105,7 @@ export type Recording = {
   duration: number;
   width: number;
   height: number;
+  hasAudio: boolean;
   /** Moments flagged while recording, in source seconds. */
   flags: number[];
 };

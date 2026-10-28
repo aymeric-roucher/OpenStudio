@@ -36,6 +36,35 @@ function roundRect(ctx: Ctx2D, r: Rect, radius: number) {
   ctx.roundRect(r.x, r.y, r.w, r.h, Math.max(0, Math.min(radius, r.w / 2, r.h / 2)));
 }
 
+// ---------- shadows ----------
+
+const shadowCache = new Map<string, { canvas: OffscreenCanvas; pad: number }>();
+
+/**
+ * Canvas shadowBlur is by far the most expensive part of a frame without a GPU,
+ * so each shadow shape is blurred once into a sprite and reused.
+ */
+function drawShadow(ctx: Ctx2D, r: Rect, radius: number, blur: number, offsetY: number, alpha: number) {
+  const w = Math.round(r.w), h = Math.round(r.h);
+  const key = [w, h, Math.round(radius), Math.round(blur), Math.round(offsetY), alpha.toFixed(2)].join(",");
+  let sprite = shadowCache.get(key);
+  if (!sprite) {
+    if (shadowCache.size > 24) shadowCache.clear();
+    const pad = Math.ceil(blur * 1.5 + Math.abs(offsetY));
+    const canvas = new OffscreenCanvas(w + 2 * pad, h + 2 * pad);
+    const c = canvas.getContext("2d")!;
+    c.shadowColor = `rgba(0,0,0,${alpha})`;
+    c.shadowBlur = blur;
+    c.shadowOffsetY = offsetY;
+    c.fillStyle = "#000";
+    roundRect(c, { x: pad, y: pad, w, h }, radius);
+    c.fill();
+    sprite = { canvas, pad };
+    shadowCache.set(key, sprite);
+  }
+  ctx.drawImage(sprite.canvas, r.x - sprite.pad, r.y - sprite.pad, r.w + 2 * sprite.pad, r.h + 2 * sprite.pad);
+}
+
 // ---------- background ----------
 
 const bgCache = new Map<string, OffscreenCanvas>();
@@ -94,7 +123,7 @@ function layoutAt(p: Project, t: number): { layout: CameraLayout | null; progres
   return { layout: r.layout, progress: ease(clamp01(Math.min(t - r.start, r.end - t) / tr)) };
 }
 
-type CamState = { rect: Rect; radius: number; alpha: number };
+export type CamState = { rect: Rect; radius: number; alpha: number };
 
 function bubbleState(p: Project, W: number, H: number, zoomW: number, camAspect: number): CamState {
   const c = p.camera;
@@ -114,8 +143,10 @@ function layoutState(layout: CameraLayout, bubble: CamState, W: number, H: numbe
     return { rect: { x: r.x + r.w * 0.1, y: r.y + r.h * 0.1, w: r.w * 0.8, h: r.h * 0.8 }, radius: bubble.radius, alpha: 0 };
   }
   if (layout === "fullscreen") return { rect: { x: 0, y: 0, w: W, h: H }, radius: 0, alpha: 1 };
-  const x = W * (1 - SIDE_SHARE);
-  return { rect: { x, y: pad, w: W * SIDE_SHARE - pad, h: H - 2 * pad }, radius: Math.min(W, H) * 0.03, alpha: 1 };
+  const radius = Math.min(W, H) * 0.03;
+  // Side by side on landscape canvases, stacked on portrait ones.
+  if (W >= H) return { rect: { x: W * (1 - SIDE_SHARE), y: pad, w: W * SIDE_SHARE - pad, h: H - 2 * pad }, radius, alpha: 1 };
+  return { rect: { x: pad, y: H * (1 - SIDE_SHARE), w: W - 2 * pad, h: H * SIDE_SHARE - pad }, radius, alpha: 1 };
 }
 
 function drawCover(ctx: Ctx2D, img: CanvasImageSource, iw: number, ih: number, r: Rect, mirror: boolean) {
@@ -216,9 +247,21 @@ export function frameRect(p: Project, W: number, H: number, screenW: number, scr
   const contentAspect = (p.crop.w * screenW) / (p.crop.h * screenH);
   const { layout, progress } = layoutAt(p, t);
   const side = layout === "side" ? progress : 0;
-  const availW = W * (1 - SIDE_SHARE * side) + p.padding * Math.min(W, H) * side;
-  const r = fitFrame(availW, H, contentAspect, p.padding);
-  return r;
+  const give = p.padding * Math.min(W, H) * side;
+  if (W >= H) return fitFrame(W * (1 - SIDE_SHARE * side) + give, H, contentAspect, p.padding);
+  return fitFrame(W, H * (1 - SIDE_SHARE * side) + give, contentAspect, p.padding);
+}
+
+/** Camera rectangle, corner radius and opacity at output time t. */
+export function cameraState(p: Project, W: number, H: number, camAspect: number, t: number): CamState {
+  const bubble = bubbleState(p, W, H, zoomViewport(p.zooms, t).w, camAspect);
+  const { layout, progress } = layoutAt(p, t);
+  const target = layout ? layoutState(layout, bubble, W, H, p.padding * Math.min(W, H)) : bubble;
+  return {
+    rect: lerpRect(bubble.rect, target.rect, progress),
+    radius: lerp(bubble.radius, target.radius, progress),
+    alpha: lerp(bubble.alpha, target.alpha, progress),
+  };
 }
 
 /** Draw one fully composited output frame at output time t. */
@@ -236,16 +279,7 @@ export function renderFrame(ctx: Ctx2D, W: number, H: number, p: Project, src: F
 
   const frame = frameRect(p, W, H, src.screenW, src.screenH, t);
   const radius = p.radius * Math.min(frame.w, frame.h);
-  if (p.shadow > 0) {
-    ctx.save();
-    ctx.shadowColor = `rgba(0,0,0,${0.25 + 0.45 * p.shadow})`;
-    ctx.shadowBlur = p.shadow * m * 0.06;
-    ctx.shadowOffsetY = p.shadow * m * 0.015;
-    ctx.fillStyle = "#000";
-    roundRect(ctx, frame, radius);
-    ctx.fill();
-    ctx.restore();
-  }
+  if (p.shadow > 0) drawShadow(ctx, frame, radius, p.shadow * m * 0.06, p.shadow * m * 0.015, 0.25 + 0.45 * p.shadow);
   ctx.save();
   roundRect(ctx, frame, radius);
   ctx.clip();
@@ -269,28 +303,11 @@ export function renderFrame(ctx: Ctx2D, W: number, H: number, p: Project, src: F
   ctx.restore();
 
   if (src.camera) {
-    const camAspect = src.cameraW / src.cameraH;
-    const bubble = bubbleState(p, W, H, view.w, camAspect);
-    const { layout, progress } = layoutAt(p, t);
-    const target = layout ? layoutState(layout, bubble, W, H, p.padding * m) : bubble;
-    const s: CamState = {
-      rect: lerpRect(bubble.rect, target.rect, progress),
-      radius: lerp(bubble.radius, target.radius, progress),
-      alpha: lerp(bubble.alpha, target.alpha, progress),
-    };
+    const s = cameraState(p, W, H, src.cameraW / src.cameraH, t);
     if (s.alpha > 0.01) {
       ctx.save();
       ctx.globalAlpha = s.alpha;
-      if (p.camera.shadow > 0) {
-        ctx.save();
-        ctx.shadowColor = `rgba(0,0,0,${0.3 + 0.4 * p.camera.shadow})`;
-        ctx.shadowBlur = p.camera.shadow * m * 0.04;
-        ctx.shadowOffsetY = p.camera.shadow * m * 0.01;
-        ctx.fillStyle = "#000";
-        roundRect(ctx, s.rect, s.radius);
-        ctx.fill();
-        ctx.restore();
-      }
+      if (p.camera.shadow > 0) drawShadow(ctx, s.rect, s.radius, p.camera.shadow * m * 0.04, p.camera.shadow * m * 0.01, 0.3 + 0.4 * p.camera.shadow);
       ctx.save();
       roundRect(ctx, s.rect, s.radius);
       ctx.clip();

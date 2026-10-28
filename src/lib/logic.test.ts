@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { outputDuration, outputToSource, sourceToOutput, splitAt, trimEdge } from "./timeline";
+import { freeSlot, moveRegion, sourceRangeToOutput, speedUpRanges, outputDuration, outputToSource, sourceToOutput, splitAt, trimEdge } from "./timeline";
 import { zoomViewport } from "./zoom";
 import { fitFrame, outputSize } from "./layout";
+import { exportPlan, gifDelay } from "./exporter";
+import { groupWords } from "./transcribe";
 import type { Segment, ZoomRegion } from "./types";
 
 const segs: Segment[] = [
@@ -43,6 +45,46 @@ describe("timeline", () => {
     const seg = result.find((s) => s.id === id)!;
     expect(seg[edge]).toBeCloseTo(expected);
   });
+
+  const regions = [
+    { id: "r1", start: 1, end: 3 },
+    { id: "r2", start: 5, end: 6 },
+  ];
+  it.each([
+    ["move is blocked by next region", "r1", "move", 3, 5, [3, 5]],
+    ["move is blocked by timeline start", "r2", "move", -1, 0, [3, 4]],
+    ["resize start blocked by previous region", "r2", "start", 2, 6, [3, 6]],
+    ["resize end blocked by total duration", "r2", "end", 5, 20, [5, 10]],
+  ] as const)("region: %s", (_name, id, mode, start, end, expected) => {
+    const r = moveRegion(regions, id, start, end, 10, mode).find((x) => x.id === id)!;
+    expect([r.start, r.end]).toEqual(expected);
+  });
+
+  it.each([
+    ["free space", 7, [7, 9]],
+    ["shortened by next region", 4, [4, 5]],
+    ["no room inside a region", 2, null],
+  ] as const)("free slot: %s", (_name, t, expected) => {
+    expect(freeSlot(regions, t, 2, 10)).toEqual(expected);
+  });
+
+  it.each([
+    ["range inside one segment", [{ start: 1, end: 2 }], [[0, 1, 1], [1, 2, 4], [2, 4, 1], [6, 10, 2]]],
+    ["range across a cut", [{ start: 3, end: 7 }], [[0, 3, 1], [3, 4, 4], [6, 7, 4], [7, 10, 2]]],
+    ["range covering a whole segment", [{ start: 5, end: 11 }], [[0, 4, 1], [6, 10, 4]]],
+  ] as const)("speed up ranges: %s", (_name, ranges, expected) => {
+    const result = speedUpRanges(segs, ranges, 4, () => "n");
+    expect(result.map((s) => [s.start, s.end, s.speed])).toEqual(expected);
+  });
+
+  it.each([
+    ["inside first segment", 1, 3, [1, 3]],
+    ["starts in a cut", 5, 8, [4, 5]],
+    ["entirely in a cut", 4.5, 5.5, null],
+    ["spans the cut", 3, 7, [3, 4.5]],
+  ] as const)("source range to output: %s", (_name, s, e, expected) => {
+    expect(sourceRangeToOutput(segs, s, e)).toEqual(expected);
+  });
 });
 
 describe("zoom", () => {
@@ -75,5 +117,100 @@ describe("layout", () => {
     expect(r.h).toBeCloseTo(450);
     expect(r.x).toBeCloseTo(100);
     expect(r.y).toBeCloseTo(275);
+  });
+});
+
+describe("captions", () => {
+  const w = (text: string, start: number, end: number) => ({ text, start, end });
+  it.each([
+    ["splits at max words", [w(" a", 0, 0.2), w(" b", 0.2, 0.4), w(" c", 0.4, 0.6)], 2, [["a b", 0, 0.4], ["c", 0.4, 0.6]]],
+    ["splits on long gaps", [w(" a", 0, 0.2), w(" b", 1, 1.2)], 7, [["a", 0, 0.2], ["b", 1, 1.2]]],
+    ["splits after sentence punctuation", [w(" Hi.", 0, 0.3), w(" Yes?", 0.3, 0.5), w(" ok", 0.5, 0.7)], 7, [["Hi.", 0, 0.3], ["Yes?", 0.3, 0.5], ["ok", 0.5, 0.7]]],
+    ["keeps unspaced scripts intact", [w("你", 0, 0.2), w("好", 0.2, 0.4)], 7, [["你好", 0, 0.4]]],
+  ] as const)("%s", (_name, words, maxWords, expected) => {
+    const captions = groupWords([...words], maxWords, 0.6);
+    expect(captions.map((c) => [c.text, c.start, c.end])).toEqual(expected);
+  });
+});
+
+describe("export", () => {
+  const rec = { width: 1920, height: 1080 };
+  const project = { aspect: "wide" as const, crop: { x: 0, y: 0, w: 1, h: 1 }, segments: segs };
+  it.each([
+    ["mp4 keeps settings", { format: "mp4", long: 1920, fps: 60, quality: "high" }, { width: 1920, height: 1080, fps: 60, frames: 360 }],
+    ["gif caps fps and size", { format: "gif", long: 3840, fps: 30, quality: "low" }, { width: 960, height: 540, fps: 15, frames: 90 }],
+  ] as const)("plan: %s", (_name, settings, expected) => {
+    expect(exportPlan(rec, project, settings)).toEqual(expected);
+  });
+
+  it.each([15, 24, 30])("gif delays at %i fps add up to the exact duration", (fps) => {
+    const total = Array.from({ length: fps * 3 }, (_, i) => gifDelay(i, fps)).reduce((a, b) => a + b, 0);
+    expect(total).toBe(3000);
+  });
+});
+
+describe("autozoom", async () => {
+  const { findIdleRanges, findTypingRanges, suggestZooms } = await import("./autozoom");
+  type Sample = import("./autozoom").ActivitySample;
+  const small = { x: 0.8, y: 0.1, w: 0.1, h: 0.1 };
+  const full = { x: 0, y: 0, w: 1, h: 1 };
+  /** Samples every 0.2 s over [0.2, end]; `at` gives the change box at time t (null for none). */
+  const track = (end: number, at: (t: number) => Sample["box"]): Sample[] =>
+    Array.from({ length: Math.round(end / 0.2) }, (_, i) => {
+      const t = Math.round((i + 1) * 2) / 10;
+      const box = at(t);
+      return { t, box, amount: box ? box.w * box.h : 0 };
+    });
+  const within = (t: number, a: number, b: number) => t >= a - 1e-9 && t <= b + 1e-9;
+
+  // Static scene, typing in a corner (1..4 s), full-screen switch at 5 s, idle until 10 s.
+  const scenario = track(10, (t) => (within(t, 1, 4) ? small : within(t, 5, 5) ? full : null));
+
+  it.each([
+    ["typing corner then switch", scenario, [{ start: 0.5, end: 4.8, x: 0.85, y: 0.15, scale: 2.5 }]],
+    ["a window switch cuts the hold short", track(8, (t) => (within(t, 1, 3) ? small : within(t, 3.6, 3.6) ? full : null)), [{ start: 0.5, end: 3.4, x: 0.85, y: 0.15, scale: 2.5 }]],
+    ["full-screen changes only", track(6, () => full), []],
+    ["activity only in the first 0.5 s", track(6, (t) => (t <= 0.4 ? small : null)), []],
+    ["single isolated change", track(6, (t) => (within(t, 3, 3) ? small : null)), []],
+    [
+      "two distant moments in different places",
+      track(10, (t) =>
+        within(t, 1, 1.6) ? { x: 0, y: 0, w: 0.4, h: 0.2 } : within(t, 6, 6.6) ? { x: 0.5, y: 0.5, w: 0.25, h: 0.25 } : null,
+      ),
+      [
+        { start: 0.5, end: 2.6, x: 0.2, y: 0.1, scale: 1.4 },
+        { start: 5.4, end: 7.6, x: 0.625, y: 0.625, scale: 2 },
+      ],
+    ],
+  ] as const)("suggestZooms: %s", (_name, samples, expected) => {
+    const zooms = suggestZooms(samples);
+    expect(zooms).toHaveLength(expected.length);
+    zooms.forEach((z, i) => {
+      for (const k of ["start", "end", "x", "y", "scale"] as const) expect(z[k]).toBeCloseTo(expected[i][k]);
+      if (i > 0) expect(z.start).toBeGreaterThan(zooms[i - 1].end);
+    });
+  });
+
+  it.each([
+    ["idle after the switch", findIdleRanges(scenario, 2), [{ start: 5, end: 10 }]],
+    ["idle with a shorter minimum", findIdleRanges(scenario, 0.5), [{ start: 0.2, end: 0.8 }, { start: 4, end: 4.8 }, { start: 5, end: 10 }]],
+    ["typing in the corner", findTypingRanges(scenario, 1), [{ start: 0.8, end: 4 }]],
+    [
+      "typing with short pauses stays one range",
+      findTypingRanges(track(6, (t) => (within(t, 1, 4) && Math.round(t * 5) % 3 !== 0 ? small : null)), 1),
+      [{ start: 0.8, end: 4 }],
+    ],
+    ["full-screen changes are not typing", findTypingRanges(track(6, () => full), 1), []],
+    [
+      "a cursor sweeping across lines is not typing",
+      findTypingRanges(track(6, (t) => ({ x: 0.1, y: t / 3, w: 0.05, h: 0.05 })), 1),
+      [],
+    ],
+  ])("ranges: %s", (_name, ranges, expected) => {
+    expect(ranges).toHaveLength(expected.length);
+    ranges.forEach((r, i) => {
+      expect(r.start).toBeCloseTo(expected[i].start);
+      expect(r.end).toBeCloseTo(expected[i].end);
+    });
   });
 });
