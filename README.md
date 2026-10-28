@@ -35,7 +35,8 @@ Best in a recent Chromium browser (Chrome, Edge, Arc, Brave). Firefox and Safari
 - Camera: shape, size, position, mirror, shadow, border.
 - Captions generated on your device with Whisper (transformers.js, WebGPU when available), editable, with size and position.
 - Audio: recording volume up to 200%, mute, background music with volume and fades.
-- Smart edits: pixel-based activity analysis suggests zooms where things happen, and speeds up idle or typing sections.
+- Smart edits: finds the mouse pointer in the recorded pixels, infers clicks, and adds zooms on clicks that follow the cursor. Also suggests zooms where the screen changes, and speeds up idle or typing sections.
+- "Keep zoomed in": the screen fills vertical or square canvases and pans with the cursor.
 - Undo and redo, command menu (Cmd+K), keyboard shortcuts, copy the current frame as an image.
 - Presets for the look, stored in this browser, shareable as JSON. Optionally reuse the last look for new recordings.
 
@@ -45,4 +46,4 @@ Best in a recent Chromium browser (Chrome, Edge, Arc, Brave). Firefox and Safari
 
 ## Not possible in a browser
 
-A web page cannot see the mouse or keyboard outside of itself, so these Screen Studio features have no equivalent here: cursor smoothing, cursor size and hiding, click sounds, keystroke overlays, click-driven auto zoom (replaced by pixel analysis), camera reactions, and recording iPhone or iPad. Shareable links would need a server and are out of scope for a local-only app.
+A web page cannot see the mouse or keyboard outside of itself, so these Screen Studio features have no equivalent here: cursor smoothing, cursor size and hiding, click sounds, keystroke overlays (click zooms are approximated from the pixels instead), camera reactions, and recording iPhone or iPad. Shareable links would need a server and are out of scope for a local-only app.

@@ -342,7 +342,7 @@ export default function Timeline(props: {
           <RegionTrack
             api={api} kind="zoom" regions={tl.zooms} pps={pps} duration={duration} className="zoom-block"
             emptyLabel="Click to add a zoom" addLabel="Zoom"
-            label={(z) => (<><small>Zoom</small>{z.scale.toFixed(1)}x · {z.instant ? "Instant" : "Smooth"}</>)}
+            label={(z) => (<><small>Zoom</small>{z.scale.toFixed(1)}x · {z.follow ? "Follow" : z.instant ? "Instant" : "Smooth"}</>)}
             setSpan={setSpan("zooms")}
             onAdd={props.onAdd}
             openMenu={openMenu}

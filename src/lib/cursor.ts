@@ -9,7 +9,9 @@ export type Click = { t: number; x: number; y: number };
 const TRACK_WIDTH = 800;
 const SAMPLE_INTERVAL = 1 / 12;
 /** Cursor heights searched, as fractions of the frame height (1x and 1.5x cursors on common displays). */
-const CURSOR_HEIGHTS = [0.018, 0.024, 0.032];
+const CURSOR_HEIGHTS = [0.016, 0.019, 0.022, 0.026, 0.031, 0.036];
+/** Sub-pixel offsets of the hotspot: a few-pixel cursor looks different at each phase once downscaled. */
+const PHASES = [0, 0.5];
 /** Minimum absolute normalized cross-correlation for a detection. */
 const MIN_SCORE = 0.8;
 /** Minimum luma gap between the bright and dark key pixels of a template, to skip flat patches cheaply. */
@@ -61,12 +63,12 @@ const SHAPES: Shape[] = [
 
 const luma = (rgba: Uint8ClampedArray, i: number) => 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2];
 
-function renderTemplate(shape: Shape, height: number, frameWidth: number): Template {
+function renderTemplate(shape: Shape, height: number, phaseX: number, phaseY: number, frameWidth: number): Template {
   const margin = Math.ceil(height * 0.6);
   const size = Math.ceil(height * 1.2) + 2 * margin;
   const ctx = new OffscreenCanvas(size, size).getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("OffscreenCanvas 2D context unavailable");
-  ctx.translate(margin, margin);
+  ctx.translate(margin + phaseX, margin + phaseY);
   ctx.scale(height, height);
   ctx.beginPath();
   shape.draw(ctx);
@@ -164,12 +166,17 @@ export async function trackCursor(video: Blob, onProgress: (p: number) => void, 
   const height = Math.round((width * track.displayHeight) / track.displayWidth);
   const ctx = new OffscreenCanvas(width, height).getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("OffscreenCanvas 2D context unavailable");
-  const templates = SHAPES.flatMap((shape) => CURSOR_HEIGHTS.map((h) => renderTemplate(shape, h * height, width)));
+  // Area-averaged downscaling keeps the thin cursor outline; the default bilinear sampling skips pixels.
+  ctx.imageSmoothingQuality = "high";
+  const templates = SHAPES.flatMap((shape) =>
+    CURSOR_HEIGHTS.flatMap((h) => PHASES.flatMap((px) => PHASES.map((py) => renderTemplate(shape, h * height, px, py, width)))),
+  );
   const cols = Math.ceil(width / CELL);
   const cells = new Uint8Array(cols * Math.ceil(height / CELL));
 
   const out: CursorSample[] = [];
   let prev: Float32Array | null = null;
+  /** Last confident position: the window stays there while the cursor is lost, as it usually stops where it vanished. */
   let last: Match | null = null;
   let nextT = -Infinity;
   for await (const sample of new VideoSampleSink(track).samples()) {
@@ -193,8 +200,10 @@ export async function trackCursor(video: Blob, onProgress: (p: number) => void, 
           cells[Math.floor(y / CELL) * cols + Math.floor(x / CELL)] = 1;
     }
     const best = search(cur, width, height, cells, cols, templates);
-    last = best && best.score >= MIN_SCORE ? best : null;
-    if (last) out.push({ t, x: last.x / width, y: last.y / height });
+    if (best && best.score >= MIN_SCORE) {
+      out.push({ t, x: best.x / width, y: best.y / height });
+      last = best;
+    }
     prev = cur;
     nextT = t + SAMPLE_INTERVAL * 0.9;
     onProgress(Math.min(Math.max(t / duration, 0), 1));
@@ -236,7 +245,7 @@ function findPauses(cursor: CursorSample[]): { start: number; end: number; x: nu
 
 /**
  * Likely clicks: the cursor stops, and within CLICK_DELAY a localized visual change appears near it that the cursor's
- * own motion does not explain. One click per pause, at the cursor position.
+ * own motion does not explain. One click per pause, at the cursor position. `cursor` and `activity` must be sorted by time.
  */
 export function inferClicks(cursor: CursorSample[], activity: ActivitySample[]): Click[] {
   const clicks: Click[] = [];
@@ -248,6 +257,8 @@ export function inferClicks(cursor: CursorSample[], activity: ActivitySample[]):
       if (a0 > pause.start + CLICK_DELAY) break;
       if (!box || box.w > MAX_CLICK_BOX || box.h > MAX_CLICK_BOX) continue;
       if (pause.x < box.x - NEAR || pause.x > box.x + box.w + NEAR || pause.y < box.y - NEAR || pause.y > box.y + box.h + NEAR) continue;
+      // The cursor must be known when the change starts: a cursor appearing (after typing, say) is not a click.
+      if (!cursor.some((s) => s.t <= a0 && s.t >= a0 - MAX_SAMPLE_GAP)) continue;
       const path = cursor.filter((s) => s.t >= a0 - SAMPLE_INTERVAL && s.t <= a1);
       const moved = path.some((s) => dist(s, pause) > STILL_DIST);
       if (moved) {

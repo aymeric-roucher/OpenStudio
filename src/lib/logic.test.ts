@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { freeSlot, moveRegion, outputSpanToSource, regionsToOutput, sourceRangeToOutput, speedUpRanges, outputDuration, outputToSource, sourceToOutput, splitAt, trimEdge } from "./timeline";
 import { zoomViewport } from "./zoom";
+import { cursorAt, inferClicks, suggestClickZooms } from "./cursor";
 import { toSubtitles } from "./subtitles";
 import { fitFrame, outputSize } from "./layout";
 import { exportPlan, gifDelay } from "./exporter";
@@ -265,5 +266,76 @@ describe("timeStretch", () => {
       expect(crossings(c) / 2 / (c.length / sr)).toBeCloseTo(freq, -0.5);
       expect(rms(c)).toBeCloseTo(Math.SQRT1_2, 1);
     }
+  });
+});
+
+describe("cursor", () => {
+  type Way = [number, number, number][];
+  const at = (way: Way, t: number) => {
+    const i = way.findIndex((w) => w[0] >= t);
+    if (i <= 0) return { x: way[Math.max(i, 0)][1], y: way[Math.max(i, 0)][2] };
+    const [t0, x0, y0] = way[i - 1];
+    const [t1, x1, y1] = way[i];
+    const p = (t - t0) / (t1 - t0);
+    return { x: x0 + (x1 - x0) * p, y: y0 + (y1 - y0) * p };
+  };
+  /** Cursor samples every 0.1 s from `visibleFrom`, and activity every 0.2 s: the cursor's own motion plus `changes`. */
+  const scene = (way: Way, changes: [number, number, number][], visibleFrom = 0) => {
+    const end = way[way.length - 1][0];
+    const cursor = Array.from({ length: Math.round(end * 10) + 1 }, (_, i) => ({ t: i / 10, ...at(way, i / 10) })).filter((s) => s.t >= visibleFrom);
+    const activity = Array.from({ length: Math.round(end * 5) + 1 }, (_, i) => {
+      const t = i / 5;
+      const pts = [at(way, t - 0.2), at(way, t)];
+      const boxes = changes.filter(([c]) => c > t - 0.2 && c <= t).map(([, x, y]) => ({ x: x - 0.04, y: y - 0.03, w: 0.08, h: 0.06 }));
+      if (Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) > 1e-9) {
+        const x = Math.min(pts[0].x, pts[1].x) - 0.02;
+        const y = Math.min(pts[0].y, pts[1].y) - 0.02;
+        boxes.push({ x, y, w: Math.abs(pts[0].x - pts[1].x) + 0.04, h: Math.abs(pts[0].y - pts[1].y) + 0.06 });
+      }
+      if (i === 0 || boxes.length === 0) return { t, box: null, amount: 0 };
+      const x = Math.min(...boxes.map((b) => b.x));
+      const y = Math.min(...boxes.map((b) => b.y));
+      const box = { x, y, w: Math.max(...boxes.map((b) => b.x + b.w)) - x, h: Math.max(...boxes.map((b) => b.y + b.h)) - y };
+      return { t, box, amount: box.w * box.h };
+    });
+    return { cursor, activity, duration: end };
+  };
+  const move: Way = [[0, 0.8, 0.8], [1, 0.2, 0.3], [3, 0.2, 0.3]];
+  const tour: Way = [[0, 0.5, 0.5], [1, 0.2, 0.3], [2, 0.2, 0.3], [2.5, 0.3, 0.35], [3.5, 0.3, 0.35], [5, 0.8, 0.8], [7, 0.8, 0.8]];
+
+  it.each([
+    ["a change next to the stopped cursor is a click", scene(move, [[1.3, 0.21, 0.31]]), [[1.2, 0.2, 0.3]], [[0.7, 2.4, 0.2, 0.3]]],
+    ["a change far from the cursor is not", scene(move, [[1.3, 0.7, 0.7]]), [], []],
+    ["a cursor appearing after typing is not", scene(move, [[1.1, 0.2, 0.3]], 1.1), [], []],
+    [
+      "nearby clicks share a zoom, a far one gets its own",
+      scene(tour, [[1.3, 0.21, 0.31], [2.7, 0.31, 0.36], [5.5, 0.81, 0.81]]),
+      [[1.2, 0.2, 0.3], [2.6, 0.3, 0.35], [5.4, 0.8, 0.8]],
+      [[0.7, 3.8, 0.25, 0.325], [4.9, 6.6, 0.8, 0.8]],
+    ],
+  ])("clicks: %s", (_name, { cursor, activity, duration }, expectedClicks, expectedZooms) => {
+    const clicks = inferClicks(cursor, activity);
+    expect(clicks).toHaveLength(expectedClicks.length);
+    clicks.forEach((c, i) => [c.t, c.x, c.y].forEach((v, k) => expect(v).toBeCloseTo(expectedClicks[i][k])));
+    const zooms = suggestClickZooms(clicks, duration);
+    expect(zooms).toHaveLength(expectedZooms.length);
+    zooms.forEach((z, i) => {
+      [z.start, z.end, z.x, z.y].forEach((v, k) => expect(v).toBeCloseTo(expectedZooms[i][k]));
+      expect(z.scale).toBe(2);
+    });
+  });
+
+  const path = [...Array.from({ length: 21 }, (_, i) => ({ t: i / 10, x: i / 20, y: 0.5 })), { t: 5, x: 0.9, y: 0.1 }];
+  it.each([
+    ["nearest sample without smoothing", 0.52, 0, { x: 0.25, y: 0.5 }],
+    ["a symmetric window keeps a straight path", 1, 0.2, { x: 0.5, y: 0.5 }],
+    ["a lone sample within a second", 4.5, 0.2, { x: 0.9, y: 0.1 }],
+    ["no sample within a second", 3.5, 0.2, null],
+    ["before the first sample", -2, 0.2, null],
+  ])("cursorAt: %s", (_name, t, smoothing, expected) => {
+    const p = cursorAt(path, t, smoothing);
+    if (expected === null) return expect(p).toBeNull();
+    expect(p?.x).toBeCloseTo(expected.x);
+    expect(p?.y).toBeCloseTo(expected.y);
   });
 });

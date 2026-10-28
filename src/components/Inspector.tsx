@@ -5,6 +5,7 @@ import { loadPrefs, savePrefs, type Prefs } from "../lib/prefs";
 import { sourceRangeToOutput, speedUpRanges } from "../lib/timeline";
 import { WALLPAPERS, wallpaperCss } from "../lib/wallpapers";
 import { analyzeActivity, findIdleRanges, findTypingRanges, suggestZooms, type ActivitySample } from "../lib/autozoom";
+import { inferClicks, suggestClickZooms, trackCursor } from "../lib/cursor";
 import { transcribe, type TranscribeProgress, type WhisperModel } from "../lib/transcribe";
 import { outputSize } from "../lib/layout";
 import { frameRect } from "../lib/render";
@@ -117,6 +118,11 @@ function SelectionPanel({ api, deleteSelected }: { api: EditorApi; deleteSelecte
           <FocusPicker api={api} zoom={z} />
         </Field>
         <Toggle label="Instant zoom (no animation)" value={z.instant} onChange={(instant) => set({ instant }, "instant")} />
+        {p.cursor.length > 0 ? (
+          <Toggle label="Follow the cursor" value={z.follow} onChange={(follow) => set({ follow }, "follow")} />
+        ) : (
+          <p className="dim" style={{ lineHeight: 1.5 }}>To make zooms follow the cursor, run Analyze recording in Smart edits first.</p>
+        )}
       </>
     );
   }
@@ -398,29 +404,37 @@ function SmartPanel({ api }: { api: EditorApi }) {
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
 
+  const [stage, setStage] = useState("");
   const analyze = async () => {
     abort.current = new AbortController();
+    const signal = abort.current.signal;
     setProgress(0);
-    const s = await analyzeActivity(rec.screen, setProgress, abort.current.signal).finally(() => setProgress(null));
+    setStage("Finding activity");
+    const s = await analyzeActivity(rec.screen, (v) => setProgress(v * 0.4), signal).catch((e) => { setProgress(null); throw e; });
+    setStage("Tracking the cursor");
+    const cursor = await trackCursor(rec.screen, (v) => setProgress(0.4 + v * 0.6), signal).finally(() => setProgress(null));
     setSamples(s);
+    update((x) => ({ ...x, cursor }));
   };
 
+  const clicks = samples ? inferClicks(p.cursor, samples) : [];
+  const clickZooms = samples ? suggestClickZooms(clicks, rec.duration) : [];
   const zooms = samples ? suggestZooms(samples) : [];
   const idle = samples ? findIdleRanges(samples, 1.5) : [];
   const typing = samples ? findTypingRanges(samples, 2) : [];
 
-  const addZooms = () => {
+  const addZooms = (list: typeof zooms, follow: boolean) => {
     const [W, H] = outputSize(p.aspect, 1920, (p.crop.w * rec.width) / (p.crop.h * rec.height));
     update((x) => {
       const added: ZoomRegion[] = [];
-      for (const z of zooms) {
+      for (const z of list) {
         const r = sourceRangeToOutput(x.segments, z.start, z.end);
         if (!r || r[1] - r[0] < 1) continue;
         if ([...x.zooms, ...added].some((o) => z.start < o.end && z.end > o.start)) continue;
         // Focus is given on the source frame: map it through the crop onto the composition.
         const f = frameRect(x, W, H, rec.width, rec.height, r[0]);
         const fx = (z.x - x.crop.x) / x.crop.w, fy = (z.y - x.crop.y) / x.crop.h;
-        added.push({ id: uid(), start: z.start, end: z.end, scale: z.scale, x: (f.x + fx * f.w) / W, y: (f.y + fy * f.h) / H, instant: false, follow: false });
+        added.push({ id: uid(), start: z.start, end: z.end, scale: z.scale, x: (f.x + fx * f.w) / W, y: (f.y + fy * f.h) / H, instant: false, follow });
       }
       api.notify(added.length ? `Added ${added.length} zooms` : "No free spot for the suggested zooms");
       return { ...x, zooms: [...x.zooms, ...added].sort((a, b) => a.start - b.start) };
@@ -433,17 +447,20 @@ function SmartPanel({ api }: { api: EditorApi }) {
     <>
       <h3>Smart edits</h3>
       <p className="muted" style={{ lineHeight: 1.5, marginTop: -6 }}>
-        Analyze the pixels of your recording to find where things happen. This replaces Screen Studio's click tracking, which a browser cannot access.
+        Analyze the pixels of your recording to find the cursor, its clicks, and where things change. A browser cannot read the mouse directly, so this replaces Screen Studio's click tracking.
       </p>
       {progress !== null ? (
-        <div className="field"><span className="muted">Analyzing… {pct(progress)}</span><div className="progress"><div style={{ width: pct(progress) }} /></div></div>
+        <div className="field"><span className="muted">{stage}… {pct(progress)}</span><div className="progress"><div style={{ width: pct(progress) }} /></div></div>
       ) : (
         <button className="btn primary block" style={{ marginBottom: 18 }} onClick={analyze}><Wand2 size={15} /> {samples ? "Analyze again" : "Analyze recording"}</button>
       )}
       {samples && (
         <>
-          <Field label="Automatic zooms">
-            <button className="btn block" disabled={!zooms.length} onClick={addZooms}>Add {zooms.length} suggested zooms</button>
+          <Field label="Click zooms" extra={<span className="dim">{p.cursor.length ? `${clicks.length} clicks found` : "cursor not found"}</span>}>
+            <button className="btn block" disabled={!clickZooms.length} onClick={() => addZooms(clickZooms, true)}>Add {clickZooms.length} zooms on clicks</button>
+          </Field>
+          <Field label="Activity zooms">
+            <button className="btn block" disabled={!zooms.length} onClick={() => addZooms(zooms, false)}>Add {zooms.length} zooms where things change</button>
           </Field>
           <Field label="Speed for idle and typing parts">
             <Segmented value={speed} onChange={setSpeed} options={[2, 4, 8].map((v) => ({ value: v, label: `${v}x` }))} />
