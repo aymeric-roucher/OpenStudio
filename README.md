@@ -2,7 +2,11 @@
 
 An open source, fully in-browser take on [Screen Studio](https://screen.studio): record your screen and camera, then polish the result with backgrounds, zooms, captions and a timeline editor. Everything runs locally in your browser. Nothing is uploaded, and projects are not saved yet: closing the tab discards the recording.
 
-## Run it
+**Try it: https://aymeric-roucher.github.io/OpenStudio/**
+
+Every push to `main` is tested, built and published there by GitHub Actions.
+
+## Run it locally
 
 ```bash
 npm install
